@@ -171,18 +171,16 @@ export const saleItemInput = z.object({
   qty: intField.refine((v) => v >= 1, { message: "Quantity must be at least 1." }),
 });
 
-export const saleCreateSchema = z
-  .object({
-    registerId: idField,
-    items: z.array(saleItemInput).min(1, { message: "The ticket is empty." }),
-    method: z.enum(["efectivo", "tarjeta"]).default("efectivo"),
-    clientName: z.string().max(120).optional().default(""),
-    cashReceived: moneyCents.optional(),
-  })
-  .refine(
-    (sale) => sale.method !== "efectivo" || sale.cashReceived === undefined || true,
-    { message: "Invalid cash amount." },
-  );
+export const saleCreateSchema = z.object({
+  registerId: idField,
+  items: z.array(saleItemInput).min(1, { message: "The ticket is empty." }),
+  method: z.enum(["efectivo", "tarjeta"]).default("efectivo"),
+  clientName: z.string().max(120).optional().default(""),
+  // cashReceived sufficiency is a DOMAIN rule (total-dependent), enforced
+  // server-side in the sale route (V2 L2 — the historical refine was a
+  // tautology and the value was dropped on the floor).
+  cashReceived: moneyCents.optional(),
+});
 
 // ---- read helpers ------------------------------------------------------------------------
 

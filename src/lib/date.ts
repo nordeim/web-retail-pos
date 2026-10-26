@@ -100,6 +100,22 @@ export function isoWeekday(date: Date): number {
   return (date.getDay() + 6) % 7;
 }
 
+/**
+ * The dashboard's rolling 7-day window, oldest-first: 7 local midnights
+ * ending TODAY, each labeled by its OWN weekday (V2 M2 — the historical
+ * positional `WEEKDAY_MIN[index]` was wrong whenever the window did not
+ * start on a Monday; the live reference rolls the labels with the dates
+ * and ends the series at today).
+ */
+export function weekWindow(now: Date): { date: Date; label: string }[] {
+  const out: { date: Date; label: string }[] = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const date = addDays(now, -i);
+    out.push({ date, label: WEEKDAY_MIN[isoWeekday(date)] });
+  }
+  return out;
+}
+
 /** Zero the clock (local midnight). */
 export function startOfDay(date: Date): Date {
   const d = new Date(date);

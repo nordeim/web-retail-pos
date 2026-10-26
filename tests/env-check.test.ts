@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   authSecretBootStatus,
   DEV_FALLBACK_SECRET,
+  EXAMPLE_SECRET,
 } from "@/lib/env-check";
 
 // The S22 boot-guard seam (ADR-020): production boots refuse to sign
@@ -108,5 +109,20 @@ describe("DEV_FALLBACK_SECRET (the single-source pin)", () => {
     // If this value ever changes, src/lib/auth.ts's import keeps the two in
     // lockstep by construction; the pin documents the historical contract.
     expect(DEV_FALLBACK_SECRET).toBe("dev-only-insecure-session-secret");
+  });
+});
+
+describe("the .env.example secret is fatal in production (V2 L9)", () => {
+  it("the example AUTH_SECRET value cannot boot a shared deploy", () => {
+    // The example file's illustrative value is public by definition — a
+    // production boot that still carries it must refuse, exactly like the
+    // dev fallback constant.
+    expect(EXAMPLE_SECRET).toBe("dev-only-veloxpos-secret-change-me");
+    const r = authSecretBootStatus("production", EXAMPLE_SECRET);
+    expect(r.level).toBe("fatal");
+  });
+
+  it("stays non-fatal in development (the example is a dev posture)", () => {
+    expect(authSecretBootStatus("development", EXAMPLE_SECRET).level).toBe("ok");
   });
 });

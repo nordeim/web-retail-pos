@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { lineTotalCents, ticketTotals } from "@/lib/money";
 import { ticketNumber } from "@/lib/ticket";
 import {
+  BusinessRuleError,
   NotFoundError,
   parseWith,
   readJson,
@@ -28,6 +29,12 @@ export const NO_ACTIVE_SHIFT =
 
 export const INSUFFICIENT_STOCK = "Stock insuficiente para completar la venta.";
 
+export const CASH_SHORT = "El efectivo recibido no cubre el total del ticket.";
+
+/** The history dialog reads from this list — the newest 500 receipts bound
+ *  the query (V2 M5); a store needing more history paginates later. */
+const SALES_LIST_TAKE = 500;
+
 function uniqueTicket(): string {
   return ticketNumber();
 }
@@ -36,6 +43,7 @@ export const GET = withUser(async (user) => {
   const rows = await db.sale.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
+    take: SALES_LIST_TAKE,
     include: { items: { orderBy: { id: "asc" } } },
   });
   return NextResponse.json(
@@ -76,10 +84,13 @@ export const POST = withUser(async (user, request: NextRequest) => {
       }
     }
 
-    // Stock + totals come from the DB rows.
+    // Stock + totals come from the DB rows. The pre-transaction check is
+    // the fast-fail copy; the authoritative guard rides INSIDE the
+    // transaction below (V2 M1 — two concurrent checkouts can no longer
+    // both pass the read and drive stock negative).
     const lines = input.items.map((item) => {
       const product = byId.get(item.productId)!;
-      if (product.stock < item.qty) throw new ValidationError(INSUFFICIENT_STOCK);
+      if (product.stock < item.qty) throw new BusinessRuleError(INSUFFICIENT_STOCK);
       return {
         product,
         qty: item.qty,
@@ -93,6 +104,16 @@ export const POST = withUser(async (user, request: NextRequest) => {
         ivaRate: l.product.ivaRate,
       })),
     );
+
+    // L2: the cash sufficiency rule is enforced where the total is known —
+    // the schema cannot see the recomputed total, and the client-side gate
+    // is not a server contract.
+    if (
+      input.method === "efectivo" &&
+      (input.cashReceived ?? -1) < totals.total
+    ) {
+      throw new BusinessRuleError(CASH_SHORT);
+    }
 
     const created = await db.$transaction(async (tx) => {
       let saleId = "";
@@ -139,10 +160,19 @@ export const POST = withUser(async (user, request: NextRequest) => {
         }
       }
       for (const line of lines) {
-        await tx.product.update({
-          where: { id: line.product.id },
+        // The race-proof decrement: the conditional updateMany succeeds only
+        // when the row still carries enough stock INSIDE the transaction —
+        // a concurrent checkout that wins the race makes this one abort the
+        // whole sale (no negative stock, no phantom receipt).
+        const decremented = await tx.product.updateMany({
+          where: {
+            id: line.product.id,
+            userId: user.id,
+            stock: { gte: line.qty },
+          },
           data: { stock: { decrement: line.qty } },
         });
+        if (decremented.count < 1) throw new BusinessRuleError(INSUFFICIENT_STOCK);
       }
       return tx.sale.findUnique({
         where: { id: saleId },

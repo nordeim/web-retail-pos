@@ -1,6 +1,6 @@
 # VeloxPOS — Punto de venta, your store
 
-![Next.js](https://img.shields.io/badge/Next.js-16.4-000000) ![React](https://img.shields.io/badge/React-19-61DAFB) ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6) ![Tailwind_CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4) ![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748) ![Bun](https://img.shields.io/badge/Bun-1.3-F69220) ![Tests](https://img.shields.io/badge/tests-147%20%2B%2049%20green-22c55e)
+![Next.js](https://img.shields.io/badge/Next.js-16.4-000000) ![React](https://img.shields.io/badge/React-19-61DAFB) ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6) ![Tailwind_CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4) ![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748) ![Bun](https://img.shields.io/badge/Bun-1.3-F69220) ![Tests](https://img.shields.io/badge/tests-181%20%2B%2067%20green-22c55e)
 
 **VeloxPOS** is a production-ready, self-hosted clone (functional superset) of
 the [`veloxposretail.base44.app`](https://veloxposretail.base44.app/) point-of-sale
@@ -40,7 +40,7 @@ and pinned by tests rather than left to luck.
 | 📈 Reportes | 7/14/30/90-day windows, revenue/transactions/average-ticket KPIs, daily series, per-method breakdown |
 | ⚙️ Ajustes | Store identity, live accent-color theming, ticket footer, card-payment provider, category management |
 | 📱 Mobile navigation | A working hamburger drawer (288px, 8 links, Esc/backdrop/route close, scroll lock) — the reference has none |
-| 🔐 Auth | Email/password with scrypt hashing, HMAC session cookies, rate limiting, register→verify→reset flows |
+| 🔐 Auth | Email/password with scrypt hashing, HMAC session cookies, rate limiting, register→verify→reset flows; a reset revokes every pre-reset session (token version) |
 
 ## Architecture
 
@@ -69,7 +69,7 @@ flowchart TB
 | API | Next route handlers + Zod 4 | Strip-mode validation, typed error mapper |
 | DB | Prisma 6 + SQLite | Zero-ops persistence at `<repo>/db/custom.db` |
 | Charts | Hand-rolled SVG | Zero dependencies, deterministic, pixel-controlled |
-| Tests | Vitest 5 + Playwright | Unit seams + browser contracts (147 + 49 green) |
+| Tests | Vitest 5 + Playwright | Unit seams + browser contracts (181 + 67 green) |
 | Runtime | Bun 1.3 | Scripts, seed, and the standalone server |
 
 ## Quick start
@@ -111,8 +111,10 @@ it is a demo seed, not a secret store.
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | yes | `file:../db/custom.db` (schema-anchored → `<repo>/db/custom.db`) |
-| `AUTH_SECRET` | prod | 64-hex HMAC secret; a missing/blank/public-dev value is a fatal boot error in production |
+| `AUTH_SECRET` | prod | 64-hex HMAC secret; a missing/blank/placeholder value (incl. this example file's) is a fatal boot error in production |
 | `NEXT_PUBLIC_SITE_URL` | no | Canonical origin for metadata/sitemap |
+| `RESET_INAPP_DELIVERY` | no | `1` = the forgot-password response carries the one-shot reset URL (the no-SMTP demo posture; non-production defaults on, production defaults OFF) |
+| `AUTH_PROXY_HOPS` | no | Trusted proxies in front of the app (default 0) — the rate limiter reads that hop from the RIGHT of `x-forwarded-for`, never the client-controlled first hop |
 | `SEED_OWNER_EMAIL` / `SEED_OWNER_PASSWORD` / `SEED_OWNER_NAME` | no | Seed identity overrides (see above) |
 
 ## Testing
@@ -134,7 +136,8 @@ bun run test:e2e    # browser layer — boots the standalone build on :3100
 
 All endpoints are session-authenticated (cookie) except `/api/health` and the
 auth pair. Errors: 400 invalid · 401 unauthenticated · 404 not found · 409
-conflict · 422 business rule.
+conflict (duplicate open shift) · 422 business rule (insufficient stock,
+short cash, burnt OTP) · 413 oversized body · 415 non-JSON body.
 
 | Endpoint | Methods | Description |
 |---|---|---|
@@ -176,9 +179,11 @@ The store's **Color primario/secundario** settings write `--vx-primary` /
   guards against
 - `docs/reference-evidence/` — live reference captures · `docs/screenshots/`
   — this app's own evidence set (`scripts/capture-screenshots.sh`)
+- `docs/remediation-plan-v2.md` — the Session-V2 audit + parity
+  remediation record (findings → TDD pins → gate evidence)
 - `AGENTS.md` / `CLAUDE.md` — agent working contracts ·
   `Project_Architecture_Document.md` — the full PAD · `worklog.md` — the
-  session journal
+  session journal · `web-retail-pos_SKILL.md` — the engineering skill
 
 ## Troubleshooting
 

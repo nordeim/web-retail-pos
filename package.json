@@ -1,7 +1,7 @@
 {
-  "name": "omni-study",
+  "name": "web-retail-pos",
   "version": "1.0.0",
-  "description": "StudyFlow — your study companion. A production-ready clone (functional superset) of omni-study1.base44.app built on Next.js 16 + React 19 + Prisma/SQLite.",
+  "description": "VeloxPOS \u2014 punto de venta. A production-ready, self-hosted clone (functional superset) of veloxposretail.base44.app built on Next.js 16 + React 19 + Tailwind CSS 4 + Prisma/SQLite.",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
@@ -43,13 +43,10 @@
     "lucide-react": "^0.525.0",
     "next": "^16.4.2",
     "prisma": "^6.11.1",
-    "quill": "^2.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
-    "web-vitals": "^6.2.3",
-    "z-ai-web-dev-sdk": "^0.0.18",
     "zod": "^4.6.5",
     "zustand": "^5.0.6"
   },

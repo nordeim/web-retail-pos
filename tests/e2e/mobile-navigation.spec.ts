@@ -98,6 +98,43 @@ test.describe("mobile navigation (390×844)", () => {
     await expect(button).toHaveAttribute("aria-expanded", "false");
   });
 
+  test("focus moves into the drawer on open and Tab wraps inside (V2 L11)", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("mobile-menu-button").click();
+    const panel = page.getByTestId("mobile-drawer-panel");
+    await expect(panel).toBeVisible();
+
+    // Focus entered the dialog (aria-modal's contract — the historical
+    // overlay left focus on the hamburger and Tab escaped the dialog).
+    const insideOnOpen = await page.evaluate(() => ({
+      active: document.activeElement?.textContent ?? "",
+      inside: !!document.activeElement?.closest('[data-testid="mobile-drawer-panel"]'),
+    }));
+    expect(insideOnOpen.inside).toBe(true);
+
+    // Walk to the LAST focusable (the 8th nav link), then Tab must wrap
+    // to the FIRST focusable inside the panel (the close button).
+    for (let i = 0; i < 9; i += 1) await page.keyboard.press("Tab");
+    const wrap = await page.evaluate(() => ({
+      active: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent ?? "",
+      inside: !!document.activeElement?.closest('[data-testid="mobile-drawer-panel"]'),
+    }));
+    expect(wrap.inside).toBe(true);
+    expect(wrap.active).toBe("Cerrar menú");
+  });
+
+  test("Escape returns focus to the hamburger (V2 L11)", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("mobile-menu-button").click();
+    await expect(page.getByTestId("mobile-drawer-panel")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("mobile-drawer-panel")).toHaveCount(0);
+    const returned = await page.evaluate(() =>
+      document.activeElement?.getAttribute("data-testid"),
+    );
+    expect(returned).toBe("mobile-menu-button");
+  });
+
   test("TRAP-4 GUARD: the drawer nav list gaps are uniform (flex gap, no margin drift)", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("mobile-menu-button").click();

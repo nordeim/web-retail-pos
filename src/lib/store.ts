@@ -179,6 +179,24 @@ export type ReportData = {
   byMethod: { method: string; total: number; count: number }[];
 };
 
+// ---- the load-failure warn (V2 L6) --------------------------------------------
+// A dynamic import keeps the toast store out of store.ts's static graph —
+// the toaster is a UI concern; the store only signals through it.
+let lastLoadWarnAt = 0;
+function warnLoadFailure(failures: number): void {
+  const now = Date.now();
+  if (now - lastLoadWarnAt < 5000) return;
+  lastLoadWarnAt = now;
+  void import("@/components/ui/toast").then(({ useToastStore }) => {
+    useToastStore.getState().push(
+      "error",
+      failures === 1
+        ? "No se pudo cargar una sección. Reintenta recargando la página."
+        : `No se pudieron cargar ${failures} secciones. Reintenta recargando la página.`,
+    );
+  });
+}
+
 // ---- the ticket (Terminal state) ---------------------------------------------
 
 export type TicketLine = {
@@ -301,9 +319,13 @@ export const usePosStore = create<PosStore>((set, get) => ({
     );
     const patch: Partial<PosStore> = {};
     const loadedPatch: Partial<Record<LoadedKey, boolean>> = {};
+    let failures = 0;
     results.forEach((result, index) => {
       const key = keys[index];
-      if (result.status !== "fulfilled") return;
+      if (result.status !== "fulfilled") {
+        failures += 1;
+        return;
+      }
       if (key === "settings") patch.settings = result.value as StoreSettings;
       else (patch as Record<string, unknown>)[key] = result.value;
       loadedPatch[key] = true;
@@ -314,6 +336,10 @@ export const usePosStore = create<PosStore>((set, get) => ({
     };
     if (patch.shifts) nextState.activeShift = pickActiveShift(patch.shifts);
     set(nextState as PosStore);
+    // V2 L6: a failed fetch used to silently render an empty view. One
+    // rate-limited error toast per burst — the empty state stays, but the
+    // failure is no longer invisible.
+    if (failures > 0) warnLoadFailure(failures);
   },
   loadAll: async () => {
     await get().loadCollections([

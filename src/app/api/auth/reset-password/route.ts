@@ -27,12 +27,17 @@ export async function POST(request: NextRequest) {
       return errorResponse(400, "That reset link is invalid or has expired. Request a new one.");
     }
 
-    // The one-shot consumption rides the SAME transaction as the write —
-    // a replay can never land between them.
+    // The one-shot consumption, the password write, AND the session-
+    // revocation bump ride the SAME transaction — a replay can never land
+    // between them, and every pre-reset cookie dies at once (V2 M6: the
+    // token version is compared on each authed read).
     await db.$transaction([
       db.user.update({
         where: { id: record.userId },
-        data: { passwordHash: hashPassword(password) },
+        data: {
+          passwordHash: hashPassword(password),
+          tokenVersion: { increment: 1 },
+        },
       }),
       db.passwordResetToken.update({
         where: { id: record.id },

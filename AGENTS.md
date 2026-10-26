@@ -97,7 +97,26 @@ scroll lock, `aria-expanded` on the hamburger. Geometry (288px panel, uniform
   (`makeCollectionRoutes`/`makeItemRoutes` + delegates from
   `src/lib/server/entities.ts`). Hand-rolled handler logic (sales, shifts,
   reports) still goes through `withUser` + `parseWith` + `toErrorResponse`
-  (Zod → 400, P2002 → 409, P2025 → 404, unauth → 401).
+  (Zod → 400, P2002 → 409, P2025 → 404, unauth → 401; V2 added
+  `ConflictError` → 409, `BusinessRuleError` → 422 — duplicate open shift,
+  insufficient stock, short cash — plus oversized body → 413 and non-JSON
+  body → 415 from the bounded `readJson`; raw `ZodError` from the delegates
+  maps to 400, never 500).
+- The reset contract (V2 C1): `POST /api/auth/forgot-password` carries the
+  reset URL in the body ONLY when in-app delivery is enabled —
+  `RESET_INAPP_DELIVERY=1` or non-production (`src/lib/reset-delivery.ts`,
+  unit-pinned). A default production boot never returns a token; the login
+  surface degrades to the generic "sent" copy. A password reset bumps
+  `User.tokenVersion` inside its transaction, revoking every pre-reset
+  cookie (V2 M6).
+- The limiter's client IP resolves through `resolveClientIp`
+  (`src/lib/auth.ts`): hop `AUTH_PROXY_HOPS` (default 0) from the RIGHT of
+  `x-forwarded-for`, fail-closed. Never read the first hop — it is
+  client-controlled (V2 H3).
+- `verify-email` is rate-limited per IP and its OTP carries an atomic
+  attempt counter (6 misses kill the token, the right code included — V2
+  H2). Login burns a dummy scrypt hash for unknown emails (no timing
+  oracle, V2 M7).
 - Zod schemas are strip-mode; partial PATCHes go through `sentKeysPatch` so
   absent keys are never writes.
 - State: `useAppStore` (view/chrome) + `usePosStore` (retail collections +
@@ -108,7 +127,14 @@ scroll lock, `aria-expanded` on the hamburger. Geometry (288px panel, uniform
 - vitest matches `src/**/*.test.ts` + `tests/**/*.test.ts` ONLY — e2e
   (`*.spec.ts`) never leaks into it, and vice versa via playwright.config.
 - Auth in e2e: the "setup" project signs in ONCE (storageState). Real login
-  attempts are rate-limited 10/IP/15min — do not add per-test logins.
+  attempts are rate-limited 10/IP/15min — do not add per-test logins. The
+  suite's server opts into `RESET_INAPP_DELIVERY=1` so the hardening spec
+  can complete a real forgot→reset→revoke round-trip.
+- `tests/hardening.spec.ts` owns its data (register/cashier/user created and
+  DELETED in the spec); `tests/e2e/parity-pins.spec.ts` pins the measured
+  live-reference heading/chart contract (V1–V6) with computed-style
+  assertions — colors resolve through a canvas pixel read (Chromium
+  serializes computed colors as lab/oklab).
 - The seeded e2e identity is `owner@veloxpos.local` / `VeloxDemo123!`
   (pinned in `tests/e2e/global-setup.ts` + `tests/e2e/helpers.ts`), NOT the
   developer's local owner from `.env`.

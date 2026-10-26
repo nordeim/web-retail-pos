@@ -3,17 +3,26 @@
 // is normalized (pasted formatting tolerated), matched against the LATEST
 // UNEXPIRED token for the account, consumed, and — on success — the account
 // is marked verified AND signed in (verify = the email proof).
+//
+// V2 H2 hardening: the endpoint is rate-limited per IP AND the token carries
+// an atomic attempt counter — 6 failed codes invalidate it regardless of the
+// window, so a leaked code cannot be brute-forced (10⁶ space, no unlimited
+// guesses against a session-granting endpoint).
 // ---------------------------------------------------------------------------
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { normalizeVerificationCode } from "@/lib/auth";
+import {
+  checkRateLimit,
+  normalizeVerificationCode,
+} from "@/lib/auth";
 import { db } from "@/lib/db";
-import { publicUser, setSessionCookie } from "@/lib/server/auth";
+import { clientIp, publicUser, setSessionCookie } from "@/lib/server/auth";
 import {
   errorResponse,
   parseWith,
+  rateLimitedResponse,
   readJson,
   toErrorResponse,
 } from "@/lib/server/http";
@@ -26,8 +35,19 @@ const verifyBodySchema = z.object({
   code: z.string().min(1).max(32),
 });
 
+const MAX_CODE_ATTEMPTS = 6;
+
 export async function POST(request: NextRequest) {
   try {
+    const ip = clientIp(request);
+    const limit = checkRateLimit(`verify:${ip}`, 10);
+    if (!limit.ok) {
+      return rateLimitedResponse(
+        limit.retryAfterSec,
+        "Too many verification attempts. Try again shortly.",
+      );
+    }
+
     const { email, code } = parseWith(verifyBodySchema, await readJson(request));
     const normalized = normalizeVerificationCode(code);
     if (!normalized) {
@@ -47,7 +67,21 @@ export async function POST(request: NextRequest) {
       where: { userId: user.id, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
     });
-    if (!token || token.code !== normalized) {
+    // H2: the attempt counter gates the SUCCESS path too — once the budget
+    // is burnt, even the correct code is dead (a brute force that stumbles
+    // onto the right code on try 7 must not sign in). The conditional
+    // updateMany is the concurrency-safe counter (no read-modify-write
+    // race); tripping it deletes the token for good.
+    if (!token || token.attempts >= MAX_CODE_ATTEMPTS || token.code !== normalized) {
+      if (token) {
+        const bumped = await db.verificationToken.updateMany({
+          where: { id: token.id, attempts: { lt: MAX_CODE_ATTEMPTS } },
+          data: { attempts: { increment: 1 } },
+        });
+        if (bumped.count === 0) {
+          await db.verificationToken.deleteMany({ where: { userId: user.id } });
+        }
+      }
       return errorResponse(400, "That code is invalid or has expired.");
     }
 
@@ -63,7 +97,10 @@ export async function POST(request: NextRequest) {
     return setSessionCookie(
       NextResponse.json({ ok: true, user: publicUser(verifiedUser) }),
       user.id,
-      { secure: request.nextUrl.protocol === "https:" },
+      {
+        secure: request.nextUrl.protocol === "https:",
+        tokenVersion: verifiedUser.tokenVersion,
+      },
     );
   } catch (err: unknown) {
     return toErrorResponse(err);

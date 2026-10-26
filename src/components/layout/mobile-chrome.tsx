@@ -21,21 +21,51 @@ import { NAV_ITEMS } from "@/lib/router";
 import { useAppStore, usePosStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function MobileChrome() {
   const mobileMenuOpen = useAppStore((s) => s.mobileMenuOpen);
   const setMobileMenu = useAppStore((s) => s.setMobileMenu);
   const storeName = usePosStore((s) => s.settings?.name ?? "Mi Tienda");
   const close = React.useCallback(() => setMobileMenu(false), [setMobileMenu]);
+  const panelRef = React.useRef<HTMLDivElement>(null);
 
-  // While the drawer is open: lock body scroll, close on Escape, and close
-  // if the viewport crosses into lg (the app bar disappears there).
+  // While the drawer is open: lock body scroll, close on Escape, keep focus
+  // INSIDE the dialog (V2 L11 — the overlay declared aria-modal without
+  // enforcing it), and close if the viewport crosses into lg (the app bar
+  // disappears there).
   React.useEffect(() => {
     if (!mobileMenuOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const previousFocus = document.activeElement as HTMLElement | null;
+    // Move focus into the dialog on open (aria-modal's contract).
+    const focusTarget =
+      panelRef.current?.querySelector<HTMLElement>("a[href], button") ?? panelRef.current;
+    focusTarget?.focus();
 
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") {
+        close();
+        return;
+      }
+      if (event.key !== "Tab" || !panelRef.current) return;
+      // Wrap Tab within the overlay's focusable elements.
+      const focusables = [
+        ...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ].filter((el) => el.offsetParent !== null);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !panelRef.current.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
 
@@ -49,6 +79,8 @@ export function MobileChrome() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKey);
       desktop.removeEventListener("change", onBreakpoint);
+      // Return focus to the invoker on close (WCAG dialog contract).
+      previousFocus?.focus?.();
     };
   }, [mobileMenuOpen, close]);
 
@@ -99,6 +131,8 @@ export function MobileChrome() {
           />
           <div
             data-testid="mobile-drawer-panel"
+            ref={panelRef}
+            tabIndex={-1}
             className={cn(
               "vx-scroll absolute bottom-0 left-0 top-0 flex w-72 flex-col overflow-y-auto border-r bg-[#0d0f1a] shadow-2xl",
               "animate-in slide-in-from-left duration-200",

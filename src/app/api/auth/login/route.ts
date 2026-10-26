@@ -7,7 +7,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 
-import { checkRateLimit, resetRateLimit, verifyPassword } from "@/lib/auth";
+import { checkRateLimit, DUMMY_CREDENTIAL_HASH, resetRateLimit, verifyPassword } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { loginSchema } from "@/lib/validation";
 import { clientIp, publicUser, setSessionCookie } from "@/lib/server/auth";
@@ -43,8 +43,15 @@ export async function POST(request: NextRequest) {
       // leaves this handler (publicUser selects its own fields).
       where: { email: email.toLowerCase() },
     });
-    // Uniform rejection for both "no such user" and "wrong password".
-    if (!user || !verifyPassword(password, user.passwordHash)) {
+    // Uniform rejection for both "no such user" and "wrong password" — and
+    // BOTH burn the same scrypt cost (V2 M7: the unknown-email branch
+    // verifies against the boot-time dummy hash so response timing no
+    // longer enumerates which emails exist).
+    const passwordOk = verifyPassword(
+      password,
+      user?.passwordHash ?? DUMMY_CREDENTIAL_HASH,
+    );
+    if (!user || !passwordOk) {
       return errorResponse(401, INVALID_CREDENTIALS);
     }
     if (!user.emailVerified) {
@@ -58,6 +65,9 @@ export async function POST(request: NextRequest) {
 
     return setSessionCookie(NextResponse.json({ user: publicUser(user) }), user.id, {
       secure: request.nextUrl.protocol === "https:",
+      // The row's CURRENT version — a session minted after a reset must
+      // match the bumped counter or the next request 401s (V2 M6).
+      tokenVersion: user.tokenVersion,
     });
   } catch (err: unknown) {
     return toErrorResponse(err);

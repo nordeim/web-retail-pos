@@ -5,13 +5,14 @@
 // factories (AGENTS.md "API pattern").
 //
 // Error contract (PAD §6.2): Zod → 400, Prisma P2002 → 409, P2025 → 404,
-// unauthed → 401, unknown → 500 with the detail logged server-side ONLY
-// (the response never carries a stack or provider message).
+// unauthed → 401, ConflictError → 409, BusinessRuleError → 422, oversized
+// body → 413, non-JSON body → 415, unknown → 500 with the detail logged
+// server-side ONLY (the response never carries a stack or provider message).
 // ---------------------------------------------------------------------------
 
 import { NextResponse, type NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
-import type { ZodError, ZodType } from "zod";
+import { ZodError, type ZodType } from "zod";
 
 import type { SessionUser } from "./auth";
 import { requireUser } from "./auth";
@@ -41,6 +42,41 @@ export class ValidationError extends Error {
     super(message);
     this.name = "ValidationError";
     this.issues = issues;
+  }
+}
+
+/** A valid request that the domain rejects: duplicate open shift (V2 L4).
+ *  Mapped to 409 — README's documented contract. */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
+/** A syntactically valid request the business rules reject: insufficient
+ *  stock, short cash (V2 M1/L2). Mapped to 422 — README's documented
+ *  contract, previously unreachable. */
+export class BusinessRuleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BusinessRuleError";
+  }
+}
+
+/** The request body exceeds the reader cap (V2 M4). Mapped to 413. */
+export class PayloadTooLargeError extends Error {
+  constructor() {
+    super("The request body is too large.");
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+/** The request body is not JSON (V2 M4's login-CSRF gate). Mapped to 415. */
+export class UnsupportedMediaTypeError extends Error {
+  constructor() {
+    super("The request body must be application/json.");
+    this.name = "UnsupportedMediaTypeError";
   }
 }
 
@@ -78,10 +114,22 @@ export function parseWith<T>(schema: ZodType<T>, input: unknown): T {
   return result.data;
 }
 
-/** Read a JSON body defensively (malformed JSON → the caller's 400 path). */
-export async function readJson(request: NextRequest): Promise<unknown> {
+/** Read a JSON body defensively (malformed JSON → the caller's 400 path).
+ *  V2 M4: the read is BOUNDED (1MB → 413) and content-type-gated (non-JSON
+ *  → 415; absent tolerated for curl-style payload-less POSTs) — the auth
+ *  routes run this BEFORE authentication, so the reader is pre-auth attack
+ *  surface. The param is the structural Request surface (text + headers);
+ *  NextRequest satisfies it. */
+const MAX_BODY_CHARS = 1_000_000;
+
+export async function readJson(request: Request): Promise<unknown> {
+  const contentType = request.headers.get("content-type");
+  if (contentType && !contentType.toLowerCase().includes("application/json")) {
+    throw new UnsupportedMediaTypeError();
+  }
   const text = await request.text();
   if (text.length === 0) return {};
+  if (text.length > MAX_BODY_CHARS) throw new PayloadTooLargeError();
   try {
     return JSON.parse(text) as unknown;
   } catch {
@@ -97,6 +145,24 @@ export function toErrorResponse(err: unknown): NextResponse {
   }
   if (err instanceof ValidationError) {
     return errorResponse(400, err.message);
+  }
+  // V2 H1: the delegates call their Zod schemas directly (.parse) — a raw
+  // ZodError used to fall through to the 500 branch. The mapper is the one
+  // root fix for every factory-backed route.
+  if (err instanceof ZodError) {
+    return errorResponse(400, formatZodError(err));
+  }
+  if (err instanceof ConflictError) {
+    return errorResponse(409, err.message);
+  }
+  if (err instanceof BusinessRuleError) {
+    return errorResponse(422, err.message);
+  }
+  if (err instanceof PayloadTooLargeError) {
+    return errorResponse(413, err.message);
+  }
+  if (err instanceof UnsupportedMediaTypeError) {
+    return errorResponse(415, err.message);
   }
   if (err instanceof NotFoundError) {
     return errorResponse(404, err.message);

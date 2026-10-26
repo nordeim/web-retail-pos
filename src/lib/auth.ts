@@ -49,14 +49,21 @@ function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
 }
 
-export function createSessionToken(userId: string): string {
-  const payload = { uid: userId, iat: Date.now(), exp: Date.now() + SESSION_TTL_MS };
+export function createSessionToken(userId: string, tokenVersion = 0): string {
+  const payload = {
+    uid: userId,
+    iat: Date.now(),
+    exp: Date.now() + SESSION_TTL_MS,
+    v: tokenVersion,
+  };
   const body = b64url(JSON.stringify(payload));
   const mac = createHmac("sha256", sessionSecret()).update(body).digest("base64url");
   return `${body}.${mac}`;
 }
 
-export function readSessionToken(token: string): { uid: string; iat: number; exp: number } | null {
+export function readSessionToken(
+  token: string,
+): { uid: string; iat: number; exp: number; v: number } | null {
   const parts = token.split(".");
   if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
   const [body, mac] = parts;
@@ -71,10 +78,13 @@ export function readSessionToken(token: string): { uid: string; iat: number; exp
   try {
     const payload: unknown = JSON.parse(Buffer.from(body, "base64url").toString());
     if (typeof payload !== "object" || payload === null) return null;
-    const { uid, iat, exp } = payload as Record<string, unknown>;
+    const { uid, iat, exp, v } = payload as Record<string, unknown>;
     if (typeof uid !== "string" || typeof iat !== "number" || typeof exp !== "number") return null;
     if (exp <= Date.now()) return null;
-    return { uid, iat, exp };
+    // Tokens minted before the version field shipped (v absent) read as 0 —
+    // the default matches every pre-existing row, so nothing revokes early.
+    if (v !== undefined && typeof v !== "number") return null;
+    return { uid, iat, exp, v: typeof v === "number" ? v : 0 };
   } catch {
     return null;
   }
@@ -88,12 +98,28 @@ const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 type Bucket = { count: number; windowStart: number };
 const buckets = new Map<string, Bucket>();
 
+/** Sweep expired buckets so rotated/spoofed keys cannot grow the map without
+ *  bound (V2 L10 — the historical map only ever overwrote entries). Runs
+ *  opportunistically whenever a NEW bucket is created past a size floor. */
+export function pruneExpiredBuckets(now: number): void {
+  for (const [key, bucket] of buckets) {
+    if (now - bucket.windowStart >= WINDOW_MS) buckets.delete(key);
+  }
+}
+
 export type RateLimitResult = { ok: boolean; retryAfterSec: number };
 
-export function checkRateLimit(key: string, max: number = MAX_ATTEMPTS): RateLimitResult {
-  const now = Date.now();
+/** `now` is injectable so the window boundary is unit-pinnable without
+ *  fake timers. */
+export function checkRateLimit(
+  key: string,
+  max: number = MAX_ATTEMPTS,
+  now: number = Date.now(),
+): RateLimitResult {
   const bucket = buckets.get(key);
   if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
+    // L10: prune before growing — spoofed key rotation can no longer leak.
+    if (buckets.size >= 512) pruneExpiredBuckets(now);
     buckets.set(key, { count: 1, windowStart: now });
     return { ok: true, retryAfterSec: 0 };
   }
@@ -140,4 +166,42 @@ export function secureRandomBytes(size: number): Buffer {
   const buf = Buffer.alloc(size);
   randomFillSync(buf);
   return buf;
+}
+
+// ---- the login timing equalizer (V2 M7) -------------------------------------------
+
+/**
+ * A throwaway scrypt hash of a random secret, computed once at boot. Unknown
+ * emails verify against THIS before answering 401, so both credential
+ * failures burn the same scrypt cost and the response time no longer
+ * enumerates which emails exist.
+ */
+export const DUMMY_CREDENTIAL_HASH = hashPassword(
+  randomBytes(18).toString("base64url"),
+);
+
+// ---- the trusted-proxy-hop contract (V2 H3) -----------------------------------------
+
+/**
+ * Resolve the limiter key from an x-forwarded-for chain. `hops` is the
+ * number of trusted proxies IN FRONT of this process (AUTH_PROXY_HOPS):
+ * the selected hop sits that many positions from the RIGHT. 0 (default,
+ * directly-exposed node) takes the rightmost entry — the one the nearest
+ * proxy appended — never the client-controlled first hop. Unparsable
+ * chains and over-declared depths fail closed to the shared "local" key
+ * (one bucket, never a fresh bucket per forged header).
+ */
+export function resolveClientIp(
+  forwarded: string | null | undefined,
+  hops = Number.parseInt(process.env.AUTH_PROXY_HOPS ?? "0", 10) || 0,
+): string {
+  if (!forwarded) return "local";
+  const parts = forwarded
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) return "local";
+  const index = parts.length - 1 - hops;
+  if (index < 0) return "local";
+  return parts[index];
 }

@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import * as React from "react";
-import { Store, Palette, ReceiptText, CreditCard, Tags, Plus, X } from "lucide-react";
+import { Store, Palette, ReceiptText, CreditCard, Tags, Plus, X, Upload } from "lucide-react";
 
 import { PageHeading, SectionCard } from "@/components/pos/shared";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,7 @@ function SettingsForm({ initial }: { initial: typeof DEFAULTS }) {
   const loadCollections = usePosStore((s) => s.loadCollections);
   const [form, setForm] = React.useState(initial);
   const [newCategory, setNewCategory] = React.useState("");
+  const [logoName, setLogoName] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = React.useState("");
 
@@ -128,11 +129,27 @@ function SettingsForm({ initial }: { initial: typeof DEFAULTS }) {
             </div>
             <div>
               <Label htmlFor="settings-logo" className="text-slate-200">Logotipo</Label>
-              <Input
+              {/* The reference renders a styled "Subir logo" button, never the
+                  raw browser file input (V2 V5). The input stays functionally
+                  wired — hidden, labelled, driven by the button. */}
+              <div className="mt-1.5 flex items-center gap-3">
+                <label
+                  htmlFor="settings-logo"
+                  className="vx-focus inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#262a36] bg-[#12141f] px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:border-white/20 hover:bg-white/5"
+                >
+                  <Upload className="h-4 w-4" />
+                  Subir logo
+                </label>
+                <span className="text-xs text-slate-500" data-testid="settings-logo-file">
+                  {logoName ?? "Sin archivo"}
+                </span>
+              </div>
+              <input
                 id="settings-logo"
                 type="file"
                 accept="image/*"
-                className="mt-1.5 max-w-xs bg-[#0d0f1a] text-slate-400"
+                className="sr-only"
+                onChange={(event) => setLogoName(event.target.files?.[0]?.name ?? null)}
               />
             </div>
             <div>

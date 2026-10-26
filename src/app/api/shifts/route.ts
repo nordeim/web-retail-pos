@@ -10,11 +10,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { db } from "@/lib/db";
 import {
+  ConflictError,
   NotFoundError,
   parseWith,
   readJson,
   toErrorResponse,
-  ValidationError,
   withUser,
 } from "@/lib/server/http";
 import { shiftOpenSchema } from "@/lib/validation";
@@ -28,9 +28,22 @@ async function listShifts(userId: string) {
     include: {
       register: { select: { name: true } },
       cashier: { select: { name: true } },
-      sales: { select: { total: true } },
     },
   });
+  // V2 M5: the per-shift sales total is ONE grouped aggregate instead of
+  // loading every sale row per shift (the historical shape was O(sales)).
+  const sums = await db.sale.groupBy({
+    by: ["shiftId"],
+    where: { userId, shiftId: { in: rows.map((row) => row.id) } },
+    _sum: { total: true },
+    _count: { _all: true },
+  });
+  const byShift = new Map(
+    sums.map((sum) => [
+      sum.shiftId,
+      { total: sum._sum.total ?? 0, count: sum._count._all },
+    ]),
+  );
   return rows.map((row) => ({
     id: row.id,
     registerId: row.registerId,
@@ -42,8 +55,8 @@ async function listShifts(userId: string) {
     openedAt: row.openedAt.toISOString(),
     closedAt: row.closedAt?.toISOString() ?? null,
     status: row.status,
-    salesTotal: row.sales.reduce((sum, sale) => sum + sale.total, 0),
-    salesCount: row.sales.length,
+    salesTotal: byShift.get(row.id)?.total ?? 0,
+    salesCount: byShift.get(row.id)?.count ?? 0,
   }));
 }
 
@@ -66,26 +79,31 @@ export const POST = withUser(async (user, request: NextRequest) => {
     });
     if (!cashier) throw new NotFoundError("El cajero no existe.");
 
-    const alreadyOpen = await db.shift.findFirst({
-      where: { registerId: register.id, status: "open" },
+    // V2 L4: the duplicate-open guard rides INSIDE the transaction — the
+    // historical check ran before it, so two concurrent opens could both
+    // succeed. ConflictError maps to the documented 409 (the comment said
+    // 409 while the code answered 400).
+    const [shift] = await db.$transaction(async (tx) => {
+      const alreadyOpen = await tx.shift.findFirst({
+        where: { registerId: register.id, status: "open" },
+      });
+      if (alreadyOpen) throw new ConflictError(DUPLICATE_SHIFT);
+      return Promise.all([
+        tx.shift.create({
+          data: {
+            userId: user.id,
+            registerId: register.id,
+            cashierId: cashier.id,
+            openingFloat: input.openingFloat,
+            status: "open",
+          },
+        }),
+        tx.register.update({
+          where: { id: register.id },
+          data: { status: "open" },
+        }),
+      ]);
     });
-    if (alreadyOpen) throw new ValidationError(DUPLICATE_SHIFT);
-
-    const [shift] = await db.$transaction([
-      db.shift.create({
-        data: {
-          userId: user.id,
-          registerId: register.id,
-          cashierId: cashier.id,
-          openingFloat: input.openingFloat,
-          status: "open",
-        },
-      }),
-      db.register.update({
-        where: { id: register.id },
-        data: { status: "open" },
-      }),
-    ]);
 
     return NextResponse.json(
       {

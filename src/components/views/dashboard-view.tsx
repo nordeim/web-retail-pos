@@ -10,6 +10,7 @@ import * as React from "react";
 import {
   TriangleAlert,
   ShoppingBasket,
+  Box,
   DollarSign,
   Package,
   ShoppingCart,
@@ -103,7 +104,8 @@ export function DashboardView() {
         <SectionCard title="Ventas — Últimos 7 días" testId="weekly-chart-card">
           <SalesAreaChart
             points={(data.weekly ?? []).map((d) => ({ label: d.label, value: d.total / 100 }))}
-            formatY={(v) => (Number.isInteger(v) ? String(v) : v.toFixed(1))}
+            // The reference's dashboard Y axis is plain integers (no $).
+            formatY={(v) => String(Math.round(v))}
           />
         </SectionCard>
         <SectionCard title="Productos por Categoría" testId="category-chart-card">
@@ -128,12 +130,22 @@ export function DashboardView() {
             {data.lowStock.map((product) => (
               <li
                 key={product.id}
-                className="flex items-center justify-between gap-3 rounded-xl bg-amber-400/10 px-4 py-3"
+                className="flex items-center gap-3 rounded-xl bg-amber-400/10 px-4 py-3"
               >
-                <p className="text-sm font-semibold text-slate-100">{product.name}</p>
-                <p className="text-sm font-medium text-orange-400" data-testid="low-stock-detail">
-                  {product.stock} en stock (mín. {product.minStock})
-                </p>
+                {/* The reference's row anatomy: amber box-icon chip, name,
+                    stock line UNDER the name (V2 V6). */}
+                <span
+                  aria-hidden
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-amber-400"
+                >
+                  <Box className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-100">{product.name}</p>
+                  <p className="text-sm font-medium text-orange-400" data-testid="low-stock-detail">
+                    {product.stock} en stock (mín. {product.minStock})
+                  </p>
+                </div>
               </li>
             ))}
           </ul>

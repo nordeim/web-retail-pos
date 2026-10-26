@@ -3068,3 +3068,56 @@ production-grade functional superset at visual parity, on this repo, without
 - Deferred (disclosed, not silently dropped): product image uploads,
   receipt email action, Dockerfile prose refresh, in-memory limiter for
   multi-instance deploys.
+
+---
+
+## Session V2 — the post-pivot audit + live-parity remediation
+
+**Context.** `main @ a8e6430` (the operator's session log landed on top of
+the V1 pivot). The charter: audit the recent changes per
+`skills/web-application/SKILL.md`, re-verify parity against the LIVE
+reference (it moves), remediate everything found TDD-style, and ship.
+
+**Audit (Mode C).** Pivot diff `8534fee..0519e30` across the review
+dimensions: **1 Critical / 3 High / 8 Medium / 11 Low** — the Critical a
+reset-token-in-response takeover path (inherited from the scaffold), the
+Highs the delegate 500-on-invalid bug, an unbruteforceable OTP endpoint,
+and the spoofable limiter key. Full report: `docs/remediation-plan-v2.md`
+§1 (each finding located, evidenced, severity-classified).
+
+**Live-reference re-measurement (agent-browser).** Logged into
+`veloxposretail.base44.app` fresh and re-took computed styles: the
+Dashboard/Ajustes card headings are TITLE-CASE slate-700 16px (the dossier
+had mislabeled them), Reports cards are uppercase white/60 14px/0.7px,
+the H1 is 24px at every viewport, weekly labels roll per-date (today last),
+the low-stock rows carry an amber icon chip, and the mobile menu is STILL
+broken on the reference (the clone's drawer stays the superset). Fresh
+ground-truth frames → `docs/screenshots/live-ref-*.png`.
+
+**Remediation (TDD, pins red first — 26 red observed).** All four batches
+landed: R1 security (reset-delivery contract ADR-011, tokenVersion
+revocation ADR-012, the OTP attempt counter, `resolveClientIp`, bounded
+`readJson`, the login equalizer, limiter pruning), R2 integrity (guarded
+in-tx stock decrement, single-formula ticket math, server-side cash rule,
+in-tx duplicate-open 409, bounded lists + grouped aggregates, hot-path
+indexes), R3 parity (SectionCard card/kicker variants, fixed-24px H1,
+thinned chart labels + integer `$` axes, `weekWindow`, Subir-logo button,
+low-stock row anatomy), R4 hygiene (VeloxPOS manifests, dead deps + dead
+code removed, `ignoreBuildErrors`/`noImplicitAny` REMOVED — the gate then
+caught two spec type errors on the next build — donut color map,
+load-failure toast, `.env.example` surface, drawer focus trap).
+
+**Verification.** Full gate on the final tree: lint ✓ · tsc ✓ · build ✓ ·
+unit **181/181 (16 files)** · e2e **67/67** (hardening.spec + parity-pins
++ the drawer focus pins extend the original 49). Screenshot set
+re-captured from the reseeded dev server.
+
+**Docs.** AGENTS/CLAUDE/README/PAD (v1.1.0, ADR-011/012) updated with the
+hardened contracts; `web-retail-pos_SKILL.md` v1.0.0 written (the stale
+`omni-study1_SKILL.md` removed); this worklog + the plan's execution
+record appended.
+
+**Stage summary.** The clone is now audited (0 known Critical/High),
+remediated (18 new pins standing guard), and re-measured against the live
+reference the same day. Standing debt: the V1 deferred list (image upload
+storage, receipt email, multi-instance limiter) — disclosed, unchanged.

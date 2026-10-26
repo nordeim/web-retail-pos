@@ -27,8 +27,8 @@ bun run dev            # dev server :3000 (tees to dev.log)
 bun run lint           # eslint 9 (flat config)
 bun run typecheck      # tsc --noEmit — run BEFORE tests
 bun run build          # production standalone build (REQUIRED before e2e)
-bun run test           # vitest unit layer (147 tests / 14 files)
-bun run test:e2e       # playwright e2e layer (49 specs, boots standalone :3100)
+bun run test           # vitest unit layer (181 tests / 16 files)
+bun run test:e2e       # playwright e2e layer (67 specs, boots standalone :3100)
 bun run db:push        # prisma db push (schema-anchored, see AGENTS.md)
 bun run db:seed        # seed the owner + the reference dataset
 ```
@@ -89,7 +89,9 @@ docs/               investigation dossier, plan, v4 trap report, evidence
 - Ticket numbers are generated SERVER-side (`src/lib/ticket.ts`, `V-` +
   8 base-36); sale prices/IVA always recompute from DB rows, never client
   input; stock decrements inside the sale's transaction.
-- Errors: Zod → 400 · P2002 → 409 · P2025 → 404 · no session → 401 ·
+- Errors: Zod → 400 · P2002/P2002-class + duplicate-open-shift → 409 ·
+  P2025 → 404 · no session → 401 · business rules (stock, cash, OTP
+  attempts) → 422 · oversized body → 413 · non-JSON body → 415 ·
   unknown → 500 (details logged server-side only).
 
 ### Styling (Tailwind v4)
@@ -104,12 +106,18 @@ docs/               investigation dossier, plan, v4 trap report, evidence
 
 ### Testing
 
-- Unit (vitest, node env): pure seams — money/ticket/date/router/validation/
-  schema/db-path/auth/api-timeout/api-offline + source pins
-  (tailwind-traps, schema). `bun run test`.
+- Unit (vitest, node env): pure seams — money/ticket/date (incl.
+  `weekWindow`)/router/validation/schema/db-path/auth (incl.
+  `resolveClientIp` + the limiter prune)/api-timeout/api-offline/
+  reset-delivery/env-check + source pins (tailwind-traps, hardening,
+  schema). `bun run test`.
 - E2E (playwright, chromium): boots the standalone build on :3100 against
   `db/e2e.db` (force-reset per run). Auth once via the setup project's
-  storageState. `bun run test:e2e` (build first!).
+  storageState. `bun run test:e2e` (build first!). The V2 pins:
+  `hardening.spec.ts` (400/409/413/415/422 contracts, the OTP attempt
+  counter, the reset-revokes-sessions round-trip) and `parity-pins.spec.ts`
+  (the measured live-reference heading/chart contracts); the drawer pins
+  gained focus-into-panel + focus-return (L11).
 - A11y: axe smoke (critical/serious, color-contrast excluded as a disclosed
   parity deviation) in `tests/e2e/a11y-smoke.spec.ts`.
 

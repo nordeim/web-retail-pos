@@ -62,6 +62,11 @@ export default defineConfig({
       PORT: String(PORT),
       NODE_ENV: "production",
       DATABASE_URL: E2E_DATABASE_URL,
+      // V2 C1/M6: the suite exercises the operator-opted-in in-app reset
+      // delivery (the hardening spec completes a real forgot→reset→revoke
+      // round-trip). The DEFAULT production shape without this flag carries
+      // no token — unit-pinned separately.
+      RESET_INAPP_DELIVERY: "1",
       // S22: 64-hex shape (the documented production form — openssl rand
       // -hex 32) so the boot guard's weak-secret warn stays silent in the
       // suite's own boot. The setup project re-signs-in each run, so the

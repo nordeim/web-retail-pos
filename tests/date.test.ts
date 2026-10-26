@@ -15,6 +15,7 @@ import {
   isSameDay,
   lastNDays,
   startOfDay,
+  weekWindow,
   WEEKDAY_MIN,
 } from "@/lib/date";
 
@@ -86,5 +87,27 @@ describe("week window helpers", () => {
     expect(startOfDay(morning)).toEqual(at(2026, 10, 25));
     expect(isSameDay(morning, at(2026, 10, 25, 23, 59))).toBe(true);
     expect(isSameDay(morning, at(2026, 10, 26, 0, 1))).toBe(false);
+  });
+
+  // V2 remediation (M2/V4): the dashboard's rolling 7-day window labels
+  // every bucket by its OWN date — the live reference ends the series at
+  // today's weekday. The historical bug labeled positionally (lun..dom) and
+  // was wrong 6 days out of 7.
+  it("weekWindow labels each day by its own weekday, today last", () => {
+    const window = weekWindow(at(2026, 10, 28, 18, 0)); // a Wednesday
+    expect(window).toHaveLength(7);
+    expect(window.map((d) => d.label)).toEqual([
+      "jue", "vie", "sáb", "dom", "lun", "mar", "mié",
+    ]);
+    expect(window[6].date).toEqual(at(2026, 10, 28));
+    expect(window[0].date).toEqual(at(2026, 10, 22));
+  });
+
+  it("weekWindow starting on a Monday reads lun..dom in order", () => {
+    // Oct 19, 2026 is a Monday — the only start weekday where the old
+    // positional labels happened to be right.
+    expect(weekWindow(at(2026, 10, 25)).map((d) => d.label)).toEqual([
+      "lun", "mar", "mié", "jue", "vie", "sáb", "dom",
+    ]);
   });
 });

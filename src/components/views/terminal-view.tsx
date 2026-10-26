@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { apiSend, ApiError } from "@/lib/api";
-import { changeDue, formatMoney, isCashSufficient, parseMoneyToCents } from "@/lib/money";
+import { changeDue, formatMoney, isCashSufficient, lineTotalCents, parseMoneyToCents } from "@/lib/money";
 import { computeTicketTotals, useAppStore, usePosStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -180,9 +180,7 @@ export function TerminalView() {
         className="vx-card flex h-fit flex-col p-4 lg:sticky lg:top-8"
         data-testid="ticket-panel"
       >
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
-          {activeShift ? "Agregado" : "Agregado"}
-        </p>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Agregado</p>
         <h2 className="mb-3 text-lg font-bold text-slate-100">TICKET</h2>
 
         {ticket.length === 0 ? (
@@ -231,8 +229,11 @@ export function TerminalView() {
                     </button>
                   </div>
                   <p className="text-sm font-bold text-slate-100">
+                    {/* The tested seam — the same single-final-round formula
+                        the server persists (V2 M3: the inline per-unit-round
+                        formula diverged by 1¢ on some qty × price pairs). */}
                     {formatMoney(
-                      Math.round(line.product.price * (1 + line.product.ivaRate / 100)) * line.qty,
+                      lineTotalCents(line.product.price, line.qty, line.product.ivaRate),
                     )}
                   </p>
                 </div>
@@ -337,9 +338,7 @@ function PaymentDialog({
           throw new ApiError(422, "Stock insuficiente para completar la venta.");
         }
       }
-      const productById = new Map(products.map((p) => [p.id, p]));
       // The API recomputes prices; the ticket lines drive the payload.
-      void productById;
       await apiSend("POST", "/api/sales", {
         registerId,
         items: lines,

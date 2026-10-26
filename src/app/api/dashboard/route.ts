@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
 // /api/dashboard — the stats + series the Dashboard view renders:
 // sales today, transactions today, product count, low-stock count,
-// the 7-day sales series (Monday-first labels), the category split, and the
-// low-stock rows.
+// the 7-day sales series (per-date weekday labels — the live reference ends
+// the series at today), the category split, and the low-stock rows.
 // ---------------------------------------------------------------------------
 
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { formatDayMonth, startOfDay, WEEKDAY_MIN } from "@/lib/date";
+import { startOfDay, weekWindow } from "@/lib/date";
 import { withUser } from "@/lib/server/http";
 
 export async function buildDashboard(userId: string, now: Date) {
@@ -40,20 +40,21 @@ export async function buildDashboard(userId: string, now: Date) {
       }),
     ]);
 
-  // Bucket the week's sales by local calendar day, Monday-first.
-  const buckets = new Map<string, number>();
-  for (let i = 0; i < 7; i += 1) {
-    const day = new Date(weekStart);
-    day.setDate(day.getDate() + i);
-    buckets.set(day.toDateString(), 0);
+  // Bucket the week's sales by local calendar day. V2 M2: the labels come
+  // from weekWindow — each day labeled by its OWN weekday (the historical
+  // positional WEEKDAY_MIN[index] was wrong whenever the rolling window did
+  // not start on a Monday).
+  const window = weekWindow(today);
+  const buckets = new Map<string, { total: number; label: string }>();
+  for (const day of window) {
+    buckets.set(day.date.toDateString(), { total: 0, label: day.label });
   }
   for (const sale of weekSales) {
-    const key = sale.createdAt.toDateString();
-    if (buckets.has(key)) buckets.set(key, buckets.get(key)! + sale.total);
+    const bucket = buckets.get(sale.createdAt.toDateString());
+    if (bucket) bucket.total += sale.total;
   }
-  const weekly = Array.from(buckets.entries()).map(([key, total], index) => ({
-    key,
-    label: WEEKDAY_MIN[index],
+  const weekly = Array.from(buckets.values()).map(({ label, total }) => ({
+    label,
     total,
   }));
 
@@ -70,6 +71,5 @@ export async function buildDashboard(userId: string, now: Date) {
 
 export const GET = withUser(async (user) => {
   const data = await buildDashboard(user.id, new Date());
-  void formatDayMonth; // the axis formatter lives in date.ts (unit-pinned)
   return NextResponse.json(data);
 });

@@ -118,11 +118,18 @@ export function ReportsView() {
         />
       </div>
 
-      <SectionCard title="Ventas diarias" className="mt-6" testId="report-daily-card">
+      <SectionCard
+        title="Ventas diarias"
+        className="mt-6"
+        testId="report-daily-card"
+        variant="kicker"
+      >
         <SalesAreaChart
           points={data.daily.map((d) => ({ label: d.label, value: d.total / 100 }))}
           height={280}
-          formatY={(v) => `$${Number.isInteger(v) ? v : v.toFixed(1)}`}
+          // Integer $ labels + thinned X ticks — the reference's 30-day
+          // chart shows ~8 evenly spaced dates, never a smeared overlap.
+          maxLabels={8}
         />
         {loading ? (
           <p className="mt-2 text-xs text-slate-500">Actualizando…</p>
@@ -130,7 +137,7 @@ export function ReportsView() {
       </SectionCard>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Ingresos por método de pago" testId="report-by-method">
+        <SectionCard title="Ingresos por método de pago" testId="report-by-method" variant="kicker">
           {data.byMethod.length === 0 ? (
             <p className="text-sm text-slate-400">Sin datos en este período</p>
           ) : (
@@ -161,7 +168,7 @@ export function ReportsView() {
           )}
         </SectionCard>
 
-        <SectionCard title="Detalle por método" testId="report-method-detail">
+        <SectionCard title="Detalle por método" testId="report-method-detail" variant="kicker">
           {data.byMethod.length === 0 ? (
             <p className="text-sm text-slate-400">Sin datos en este período</p>
           ) : (

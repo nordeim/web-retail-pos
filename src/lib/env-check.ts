@@ -7,6 +7,11 @@
 /** The historical dev fallback (single source — src/lib/auth.ts imports THIS). */
 export const DEV_FALLBACK_SECRET = "dev-only-insecure-session-secret";
 
+/** The illustrative value shipped in .env.example (V2 L9). It is public by
+ *  definition, so a production boot still carrying it is treated exactly
+ *  like the dev fallback: FATAL. */
+export const EXAMPLE_SECRET = "dev-only-veloxpos-secret-change-me";
+
 export type BootStatus = {
   level: "ok" | "warn" | "fatal";
   message?: string;
@@ -35,10 +40,10 @@ export function authSecretBootStatus(
         message: `AUTH_SECRET is required in production — refusing to sign session cookies with an absent secret. ${REMEDY}`,
       };
     }
-    if (secret === DEV_FALLBACK_SECRET) {
+    if (secret === DEV_FALLBACK_SECRET || secret === EXAMPLE_SECRET) {
       return {
         level: "fatal",
-        message: `AUTH_SECRET is required in production — refusing to sign session cookies with the public dev fallback constant. ${REMEDY}`,
+        message: `AUTH_SECRET is required in production — refusing to sign session cookies with a public placeholder secret. ${REMEDY}`,
       };
     }
     if (secret.length < 32) {

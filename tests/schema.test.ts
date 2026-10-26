@@ -70,6 +70,28 @@ describe("the retail schema", () => {
     expect(text).toContain("closingAmount Int?");
     expect(text).toContain('status        String    @default("open")');
   });
+
+  // V2 remediation (M6): a password reset must revoke pre-reset session
+  // cookies — the token version rides the HMAC payload and is compared on
+  // every authed read.
+  it("carries the session-revocation token version", () => {
+    expect(schema()).toMatch(/tokenVersion\s+Int\s+@default\(0\)/);
+  });
+
+  // V2 remediation (H2): the OTP gains an atomic attempt counter.
+  it("carries the verification attempt counter", () => {
+    expect(schema()).toMatch(/attempts\s+Int\s+@default\(0\)/);
+  });
+
+  // V2 remediation (L8): the hot lookup paths are indexed (SQLite does not
+  // auto-index FK columns).
+  it("indexes the hot query paths", () => {
+    const text = schema();
+    expect(text).toContain("@@index([userId, createdAt])"); // Sale history
+    expect(text).toContain("@@index([saleId])"); // SaleItem joins
+    expect(text).toContain("@@index([userId, registerId, status])"); // Shift gate
+    expect(text).toContain("@@index([userId])"); // per-user tables
+  });
 });
 
 describe("the .env contract", () => {

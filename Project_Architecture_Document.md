@@ -1,11 +1,14 @@
-# VeloxPOS (`web-retail-pos`) — Master Project Architecture Document (PAD) v1.0.0
+# VeloxPOS (`web-retail-pos`) — Master Project Architecture Document (PAD) v1.1.0
 
 > Generated per the `skills/project-architecture-document-md` canonical
 > section order. Evidence labels: **Verified** (executed/observed in this
 > workspace), **Reasoned** (inference from code), **Assumed** (stated
 > decision). Companion: `docs/reference-investigation.md` (the reference
 > dossier), `docs/implementation-plan.md` (the replication plan),
+> `docs/remediation-plan-v2.md` (the Session-V2 audit record),
 > `AGENTS.md` (agent gotchas), `worklog.md` (session journal).
+> v1.1.0 — Session V2: ADR-011/012, the hardened error contract, the
+> security-control additions, 181 unit + 67 e2e.
 
 ## Table of Contents
 
@@ -54,6 +57,8 @@ lowest-risk path. **Verified.**
 | ADR-008 | Mobile drawer is a superset feature (the reference has none); geometry e2e-pinned at 390×844 | Accepted — Verified (mobile-navigation.spec.ts) |
 | ADR-009 | Seed identity via `SEED_OWNER_*` env with an in-code password default (bun dotenv expands `$…`) | Accepted — Verified |
 | ADR-010 | db-path v3 hardening: the repo owning `prisma/schema.prisma` wins over Turbopack's mangled sibling-db absolute form | Accepted — Verified (db-path.test.ts pins) |
+| ADR-011 | Reset delivery: the forgot-password response carries the token only when in-app delivery is enabled (`RESET_INAPP_DELIVERY=1` / non-production); default production never leaks it | Accepted — Verified (reset-delivery pins + hardening.spec) |
+| ADR-012 | Session revocation: `User.tokenVersion` rides the HMAC payload and is compared on every authed read; password reset bumps it in-transaction | Accepted — Verified (hardening.spec revocation round-trip) |
 
 ---
 
@@ -129,9 +134,13 @@ flowchart TB
   decrement in the same transaction, server-generated ticket `V-XXXXXXXX`
   with P2002 retry), settings (upsert singleton), dashboard/reports
   (aggregations over local-day buckets).
-- **Error contract**: Zod → 400 · P2002 → 409 · P2025 → 404 · no session →
-  401 · business rules → 422 (insufficient stock, no active shift) ·
-  unknown → 500 (server log only). **Verified.**
+- **Error contract**: Zod (incl. the delegates' raw `.parse`) → 400 ·
+  P2002 → 409 · P2025 → 404 · no session → 401 · duplicate open shift →
+  409 (`ConflictError`, checked INSIDE the open transaction) · business
+  rules → 422 (`BusinessRuleError`: insufficient stock — guarded
+  decrement inside the sale transaction — short cash, burnt OTP) ·
+  oversized body → 413 · non-JSON body → 415 · unknown → 500 (server log
+  only). **Verified** (unit + hardening.spec).
 
 ---
 
@@ -206,7 +215,12 @@ live. **Verified** (settings.spec e2e).
 |---|---|---|
 | Password storage | scrypt (64-byte key, 16-byte salt), `scrypt$salt$key` format | src/lib/auth.ts — Verified |
 | Sessions | HMAC-signed stateless token, httpOnly cookie `sf_session`, 7-day TTL; verification re-proves the user exists | Verified (auth.test.ts) |
-| Rate limiting | In-memory per-IP buckets on login/forgot (10/15min); successful login RESETS the user's bucket | Verified (auth.test.ts) |
+| Rate limiting | In-memory per-IP buckets on login/register/forgot/verify (10/15min), expired buckets pruned, successful login RESETS the user's bucket; the IP resolves through the trusted-proxy-hop contract (`AUTH_PROXY_HOPS`, fail-closed — never the client-controlled first hop) | Verified (auth.test.ts + hardening.test.ts) |
+| Reset delivery | The 200 body carries the reset URL only when `RESET_INAPP_DELIVERY=1` or non-production; a default production boot returns an empty `{ok:true}` (the historical token-in-body was an unauthenticated takeover path) | Verified (reset-delivery pins) |
+| Session revocation | `User.tokenVersion` rides the HMAC payload; compared on every authed read; reset bumps it in the same transaction as the password write | Verified (hardening.spec) |
+| OTP hardening | verify-email is IP-rate-limited and its token carries an atomic attempt counter (6 misses kill it, correct code included) | Verified (hardening.spec) |
+| Timing equalization | Unknown-email logins verify against a boot-time dummy scrypt hash — both credential failures burn the same cost | Verified (source pin) |
+| Body bounds | `readJson` caps bodies at 1MB (413) and gates non-JSON content types (415) — the pre-auth reader is bounded | Verified (unit + hardening.spec) |
 | Boot guard | Production fatals on missing/blank/public-dev `AUTH_SECRET` (exit 1, not a degraded server) | Verified (env-check.test.ts) |
 | Ownership | Every retail query scoped `where:{userId}`; deletes verify ownership first | Verified (delegates) |
 | Input validation | Zod strip-mode on every write path; unknown keys dropped; partial PATCH filtered by `sentKeysPatch` | Verified |
@@ -237,8 +251,8 @@ Two layers, two runners, disjoint file globs:
 
 | Layer | Runner | Scope | Count |
 |---|---|---|---|
-| Unit | vitest (`tests/**/*.test.ts`, `src/**/*.test.ts`, node env) | Pure seams + source pins | 147 tests / 14 files — Verified |
-| E2E | playwright (chromium, standalone server on :3100) | Browser contracts | 49 specs — Verified |
+| Unit | vitest (`tests/**/*.test.ts`, `src/**/*.test.ts`, node env) | Pure seams + source pins | 181 tests / 16 files — Verified |
+| E2E | playwright (chromium, standalone server on :3100) | Browser contracts | 67 specs — Verified |
 
 - **Unit seams**: money (the verified ticket math), ticket (V-ID shape),
   router (8-view map + aliases), date (es-MX formatters), validation
@@ -313,8 +327,8 @@ Two layers, two runners, disjoint file globs:
 | 3 | In-memory rate limiter (per-process) | Accepted for single-tenant; revisit for multi-instance |
 | 4 | Product images: the dialog accepts a file but the clone does not store/serve uploads | Known gap (reference stores an image URL) |
 | 5 | Receipt email action (`Mail` icon) is present but not wired (no SMTP) | Known gap |
-| 6 | Dockerfile/DEPLOYMENT.md inherited from the scaffold reference the old app name in prose | Pending doc refresh |
-| 7 | `next.config.ts` sets `typescript.ignoreBuildErrors: true` (scaffold default) | Mitigated by the mandatory `bun run typecheck` gate; keeping the gate green is the contract |
+| 6 | Dockerfile/DEPLOYMENT.md inherited from the scaffold reference the old app name in prose | Pending doc refresh (prose only) |
+| 7 | ~~`ignoreBuildErrors: true`~~ removed in Session V2 (L1); `next build` type-checks | Resolved — build green |
 | 8 | a11y: the reference's own low-contrast headings are replicated for parity (axe color-contrast excluded, disclosed) | Disclosed deviation |
 
 ---
