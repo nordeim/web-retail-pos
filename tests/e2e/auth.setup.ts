@@ -1,13 +1,22 @@
-import { expect, test as setup } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
 import { DEMO_EMAIL, DEMO_PASSWORD } from "./helpers";
 
-// One authenticated session for the whole run — saved as a storageState and
-// replayed into every main-project context (see playwright.config.ts for why
-// per-test logins are not an option: the auth rate limiter).
-setup("sign the demo user in", async ({ request }) => {
-  const res = await request.post("/api/auth/login", {
-    data: { email: DEMO_EMAIL, password: DEMO_PASSWORD },
-  });
-  expect(res.ok(), `login failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  await request.storageState({ path: "tests/e2e/.auth/user.json" });
+// The "setup" project: sign the demo user in ONCE and save the session
+// cookie for every main-project spec (the auth endpoints are rate-limited —
+// per-test logins would trip the limiter mid-suite).
+
+const AUTH_STATE = "tests/e2e/.auth/user.json";
+
+test("authenticate the demo user", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByTestId("login-email").fill(DEMO_EMAIL);
+  await page.getByTestId("login-password").fill(DEMO_PASSWORD);
+  await page.getByTestId("login-submit").click();
+
+  // The shell is the auth proof: the desktop sidebar renders with the nav.
+  await expect(page.getByTestId("desktop-sidebar")).toBeVisible();
+  await expect(page.getByTestId("terminal-no-shift")).toBeVisible();
+
+  await page.context().storageState({ path: AUTH_STATE });
 });
