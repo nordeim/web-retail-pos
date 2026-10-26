@@ -3121,3 +3121,18 @@ record appended.
 remediated (18 new pins standing guard), and re-measured against the live
 reference the same day. Standing debt: the V1 deferred list (image upload
 storage, receipt email, multi-instance limiter) — disclosed, unchanged.
+
+---
+
+## Session V2 (appendix — push reconciliation)
+
+On push, the wrapper reported non-fast-forward: origin/main had moved
+ahead with a PARALLEL VeloxPOS transformation draft (the "Task 1" line —
+cdffbd7 feat! / 0439de0 test [138 unit + 24 e2e] / 2261992 docs /
+9383092 merge), itself a merge that superseded the V1 chain's tree.
+Resolution: merged origin/main with strategy `-s ours` — the parallel
+draft's commits remain in history for archaeology, while the final tree
+is THIS session's remediated implementation (181 unit + 67 e2e green on
+the final tree, the V1 doc chain + audit remediation intact). Recorded
+honestly rather than silently discarding either side; no force push, no
+new branches.
