@@ -125,7 +125,7 @@ What the compose file does:
 
 | Piece | Purpose |
 |---|---|
-| `studyflow` service | The standalone server on :3000 (`STUDYFLOW_PORT` remaps), `/data` volume for SQLite, healthcheck on `/api/health` |
+| `veloxpos` service | The standalone server on :3000 (`VELOXPOS_PORT` remaps), `/data` volume for SQLite, healthcheck on `/api/health` |
 | `init` service (`--profile init`) | One-shot `prisma db push` + the idempotent seed onto the same volume |
 | `db-data` volume | The SQLite file (`file:/data/custom.db`) — survives container rebuilds |
 | `AUTH_SECRET` | **Required** — compose refuses to boot with the placeholder (§3) |
@@ -190,7 +190,7 @@ the full-fidelity backup.
 
 **Restoring (session-23):** the same file imports back — the
 **Restore from a backup** card on the `/export` page takes a downloaded
-`studyflow-data-*.json` (up to 10 MiB) and restores it into the signed-in
+`veloxpos-data-*.json` (up to 10 MiB) and restores it into the signed-in
 account. Rows match by id: existing rows update to the file's values,
 new ones are created, nothing is ever deleted, and the whole import
 either completes or rolls back completely (a failed import changes

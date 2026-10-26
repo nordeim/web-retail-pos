@@ -1,342 +1,245 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// The shared view primitives — the single sources the 20 views consume
-// (AGENTS.md: "Views orchestrate; shared.tsx owns the patterns"). Every
-// measurement here is reference-derived; do not improvise values.
+// Shared view primitives — the pieces every POS view reuses: the page
+// header, the reference's rounded empty-state card, the status badges and
+// the filter chip row. Visual contract: measured off the live reference
+// (2026-10-26) — dim slate titles (the a11y-superset deviation, ≈4.1:1 on
+// the dark canvas), 16px-radius cards with the 0 8px 32px black glow.
 // ---------------------------------------------------------------------------
 
 import * as React from "react";
-import { CalendarIcon, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-// ---- ViewHeader -------------------------------------------------------------
-
-type ViewHeaderProps = {
+/** h1 + optional subtitle + optional right-side action. The h1 renders
+ *  slate-500 — the reference's own #1e293b-on-dark is ~1.1:1; documented. */
+export function PageHeader({
+  title,
+  subtitle,
+  action,
+  className,
+}: {
   title: string;
   subtitle?: string;
-  icon?: LucideIcon;
-  /** size="lg" → the 30px MyDay/FocusTimer titles. */
-  size?: "default" | "lg";
-  actions?: React.ReactNode;
-};
-
-/** h1 text-2xl font-bold text-slate-800 + optional 24px accent icon + 16px
- *  subtitle with the reference's exact per-view wording. Tasks/MyDay/Calendar
- *  pass no icon (reference-measured). */
-export function ViewHeader({ title, subtitle, icon: Icon, size = "default", actions }: ViewHeaderProps) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <h1
-          className={cn(
-            "flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100",
-            size === "lg" ? "text-3xl" : "text-2xl",
-          )}
-        >
-          {Icon && <Icon className="size-6 shrink-0 text-sf-primary" strokeWidth={2} />}
-          {title}
-        </h1>
-        {subtitle && (
-          <p className="mt-1 text-base text-slate-500 dark:text-slate-400">{subtitle}</p>
-        )}
-      </div>
-      {actions}
-    </div>
-  );
-}
-
-// ---- StatCard -----------------------------------------------------------------
-
-type StatCardProps = {
-  icon: LucideIcon;
-  label: string;
-  value: React.ReactNode;
-  hint?: string;
-  iconClassName?: string;
-  /** Inline sRGB gradient for the icon block (S4-K, the v4 trap-5 path). */
-  iconBackground?: string;
-};
-
-/** KPI card — the reference anatomy (S3-A/S4-B): label (14px/500 slate-500,
- *  mb-1) → value heading (30px/700, normal tracking) → hint (14px, mt-1)
- *  stacked left; a 48px solid chip with a 24px WHITE glyph top-right; a soft
- *  wash blob clipped by the rounded-2xl card. The label/hint are DOM
- *  SIBLINGS of the value heading (the e2e reads
- *  previousElementSibling/nextElementSibling). The value renders as h2 and
- *  the hint as slate-500 — one conscious visual deviation each, both
- *  Lighthouse-driven (session 61): the stat h3s under the greeting h1
- *  tripped heading-order, and the reference's slate-400 hint fails WCAG AA
- *  on white (2.56:1; slate-500 = 4.76:1). Dark keeps the reference value. */
-export function StatCard({ icon: Icon, label, value, hint, iconClassName, iconBackground }: StatCardProps) {
-  return (
-    <div className="sf-card relative overflow-hidden rounded-2xl p-6">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full opacity-70"
-        style={{
-          backgroundImage:
-            "linear-gradient(to bottom right, rgb(var(--sf-primary-empty-from)), rgb(var(--sf-primary-empty-to)))",
-        }}
-      />
-      <div className="relative flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="mb-1 text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
-          <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">{value}</h2>
-          <p className="mt-1 text-sm text-slate-500">{hint ?? label}</p>
-        </div>
-        <span
-          className={cn(
-            "flex size-12 shrink-0 items-center justify-center rounded-xl sf-print-exact",
-            iconClassName ?? "bg-violet-500 dark:bg-violet-500",
-          )}
-          style={iconBackground ? { backgroundImage: iconBackground } : undefined}
-        >
-          <Icon className="size-6 text-white" strokeWidth={2} />
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ---- SectionCard -----------------------------------------------------------------
-
-type SectionCardProps = {
-  title?: string;
-  icon?: LucideIcon;
   action?: React.ReactNode;
-  flush?: boolean;
   className?: string;
-  bodyClassName?: string;
-  /** S4-T (s70): the reference's dashboard section-header block — outer
-   *  `p-6 border-b border-slate-100` + inner gap-less flex row. */
-  borderedHeader?: boolean;
-  children: React.ReactNode;
-};
-
-/** Card with an h2 header row; flush = edge-to-edge divide-y rows (S8). */
-export function SectionCard({ title, icon: Icon, action, flush = false, className, bodyClassName, borderedHeader = false, children }: SectionCardProps) {
+}) {
   return (
-    <section className={cn("sf-card overflow-hidden", className)}>
-      {title && (
-        borderedHeader ? (
-          // S4-T (measured s70): the reference's section header is an OUTER
-          // `p-6 border-b border-slate-100` block wrapping an inner
-          // `flex items-center justify-between` row (h=32, no gap) — the
-          // single padded row rendered 24/16 with no divider. Opt-in: the
-          // other SectionCard consumers' reference anatomy is unmeasured
-          // (their zero states render no titled cards to probe).
-          <div className="border-b border-slate-100 p-6 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-slate-100">
-                {Icon && <Icon className="size-5 text-sf-primary" strokeWidth={2} />}
-                {title}
-              </h2>
-              {action}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between gap-3 p-6 pb-4">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-slate-100">
-              {Icon && <Icon className="size-5 text-sf-primary" strokeWidth={2} />}
-              {title}
-            </h2>
-            {action}
-          </div>
-        )
-      )}
-      <div className={cn(flush ? "divide-y divide-slate-50 dark:divide-slate-800" : "p-6 pt-0", title && !flush && "pt-0", bodyClassName)}>
-        {children}
+    <div className={cn("mb-6 flex flex-wrap items-start justify-between gap-4", className)}>
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-500">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-slate-400">{subtitle}</p>}
       </div>
-    </section>
+      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+    </div>
   );
 }
 
-// ---- Empty states ---------------------------------------------------------------
-
-type EmptyStateProps = {
+/** The reference's empty state: a centered rounded card with a big dim
+ *  icon, a bold title and a muted description. */
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+  className,
+}: {
   icon: LucideIcon;
   title: string;
-  hint: string;
-  cta?: React.ReactNode;
-};
-
-/** The ONE empty-state design (S4): 80px rounded-2xl gradient block
- *  (empty-from → empty-to), 40px accent icon, 20px/600 h3, 16px hint. */
-export function EmptyState({ icon: Icon, title, hint, cta }: EmptyStateProps) {
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <div
-        className="flex size-20 items-center justify-center rounded-2xl"
-        style={{
-          backgroundImage:
-            "linear-gradient(to bottom right, rgb(var(--sf-primary-empty-from)), rgb(var(--sf-primary-empty-to)))",
-        }}
-      >
-        <Icon className="size-10 text-sf-primary" strokeWidth={2} />
-      </div>
-      <h2 className="mt-4 text-xl font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
-      <p className="mt-1 text-base text-slate-500 dark:text-slate-400">{hint}</p>
-      {cta && <div className="mt-6">{cta}</div>}
+    <div
+      className={cn(
+        "pos-card flex flex-col items-center justify-center gap-3 px-6 py-14 text-center",
+        className,
+      )}
+    >
+      <Icon className="h-14 w-14 text-violet-400/70" strokeWidth={1.6} />
+      <h2 className="text-xl font-bold text-slate-300">{title}</h2>
+      {description && <p className="max-w-sm text-sm text-slate-400">{description}</p>}
+      {action}
     </div>
   );
 }
 
-/** The slim inline empty (dashboard sections inside flush cards — S9-R).
- *  The reference's section-empty message renders 16px (measured s69,
- *  S4-O) — not the 14px the S9-era build shipped. */
-export function SimpleEmptyState({ icon: Icon, message }: { icon: LucideIcon; message: string }) {
-  return (
-    <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-      <Icon className="mx-auto mb-3 h-12 w-12 text-slate-300 dark:text-slate-600" strokeWidth={2} />
-      <p className="text-base text-slate-500 dark:text-slate-400">{message}</p>
-    </div>
-  );
-}
-
-// ---- SubjectChip -----------------------------------------------------------------
-
-export function SubjectChip({ name, color }: { name?: string | null; color?: string | null }) {
-  if (!name) return null;
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-      <span
-        aria-hidden
-        className="size-2 rounded-full"
-        style={{ backgroundColor: color ?? "rgb(var(--sf-primary))" }}
-      />
-      {name}
-    </span>
-  );
-}
-
-/** S76/AC2+AC4 (measured on the reference): the accent-tinted subject tag —
- * the violet pill with the w-2 dot the ref renders in the assignment meta
- * row and on the exam card. Accent-aware through the sf-subject-chip
- * utility (8% tint + 19% border + accent text); the dot keeps the
- * subject's own color, falling back to the accent. */
-export function SubjectTagChip({ name, color }: { name?: string | null; color?: string | null }) {
-  if (!name) return null;
-  return (
-    <span className="sf-subject-chip inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium">
-      <span
-        aria-hidden
-        className="size-2 rounded-full"
-        style={{ backgroundColor: color ?? "rgb(var(--sf-primary))" }}
-      />
-      {name}
-    </span>
-  );
-}
-
-// ---- Task row primitives (S6) ------------------------------------------------------
-
-export const PRIORITY_BORDER: Record<string, string> = {
-  none: "border-slate-300 dark:border-slate-600",
-  low: "border-sky-400",
-  medium: "border-amber-400",
-  high: "border-red-400",
-};
-
-/** A 24px ROUND checkbox whose 2px border IS the priority color (S6 pin). */
-export function PriorityCheckbox({
-  checked,
-  priority,
-  onToggle,
-  label,
+/** Status badges — "Activo"/"Completada" green-on-green-100, "Cerrada"
+ *  dark-on-slate-100 (reference-measured fills). */
+export function Badge({
+  tone,
+  children,
+  className,
 }: {
-  checked: boolean;
-  priority: string;
-  onToggle: () => void;
-  label: string;
+  tone: "success" | "neutral" | "danger" | "warning" | "violet";
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const tones: Record<string, string> = {
+    success: "bg-green-100 text-green-700",
+    neutral: "bg-slate-100 text-slate-700",
+    danger: "bg-red-100 text-red-700",
+    warning: "bg-amber-100 text-amber-700",
+    violet: "bg-violet-100 text-violet-700",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold",
+        tones[tone],
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** The filter chip row (Todos / categories): active = pos-gradient + white,
+ *  inactive = #161a2b surface with slate-300 text (reference-measured). */
+export function Chip({
+  active,
+  children,
+  onClick,
+  className,
+}: {
+  active?: boolean;
+  children: React.ReactNode;
+  onClick?: () => void;
+  className?: string;
 }) {
   return (
     <button
       type="button"
-      role="checkbox"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={onToggle}
+      aria-pressed={active}
+      onClick={onClick}
       className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-full border-2 bg-white transition-colors dark:bg-slate-900",
-        PRIORITY_BORDER[priority] ?? PRIORITY_BORDER.none,
-        checked && "border-sf-primary bg-sf-primary text-sf-primary-foreground",
+        "shrink-0 rounded-lg px-4 py-2 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sf-primary/40",
+        active
+          ? "pos-gradient text-white shadow-[0_4px_16px_rgb(99_102_241/0.4)]"
+          : "border border-[#1e2235] bg-[#141828] text-slate-300 hover:border-[#2a2f4a] hover:text-white",
+        className,
       )}
     >
-      {checked && (
-        <svg viewBox="0 0 12 12" className="size-3" fill="none" aria-hidden>
-          <path d="M2 6.5 4.5 9 10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
+      {children}
     </button>
   );
 }
 
-export function DuePill({
+/** Section heading inside a card ("Ventas — Últimos 7 días"). */
+export function CardTitle({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <h3 className={cn("text-base font-bold text-slate-300", className)}>{children}</h3>
+  );
+}
+
+/** The dashboard/report stat card with the right-side glowing icon chip. */
+export function StatCard({
   label,
-  overdue,
-  withIcon = false,
+  value,
+  icon: Icon,
+  tone,
 }: {
   label: string;
-  overdue?: boolean;
-  /** S76/AC8 (measured): the ref's task due pill carries a leading
-   * calendar glyph — render it for the task-row form. */
-  withIcon?: boolean;
+  value: string;
+  icon: LucideIcon;
+  tone: "green" | "violet" | "blue" | "orange";
 }) {
+  const tones: Record<string, { chip: string; glow: string }> = {
+    green: { chip: "bg-emerald-500 text-white", glow: "rgb(16 185 129 / 0.35)" },
+    violet: { chip: "bg-violet-500 text-white", glow: "rgb(139 92 246 / 0.35)" },
+    blue: { chip: "bg-blue-500 text-white", glow: "rgb(59 130 246 / 0.35)" },
+    orange: { chip: "bg-amber-500 text-white", glow: "rgb(245 158 11 / 0.35)" },
+  };
+  const t = tones[tone];
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-        overdue
-          // red-700 not the reference's red-600 — 5.32:1 on red-100 vs 3.95
-          // (WCAG AA at the pill's 12px); Lighthouse session 61.
-          // S92/AS1: the family rides the sf-pill-red utility.
-          ? "sf-pill-red"
-          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-      )}
-    >
-      {withIcon && <CalendarIcon className="size-3" strokeWidth={2} aria-hidden />}
-      {label}
-    </span>
+    <div className="pos-card relative flex items-center justify-between overflow-hidden p-5">
+      <div aria-hidden className="absolute -right-4 -top-6 h-20 w-28 rounded-full bg-white/[0.03] blur-xl" />
+      <div className="min-w-0">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
+        <p className="mt-2 truncate text-2xl font-bold text-slate-300">{value}</p>
+      </div>
+      <span
+        aria-hidden
+        className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", t.chip)}
+        style={{ boxShadow: `0 6px 24px ${t.glow}` }}
+      >
+        <Icon className="h-5 w-5" strokeWidth={2.2} />
+      </span>
+    </div>
   );
 }
 
-export function RepeatPill({ label }: { label: string }) {
+/** The primary gradient button (Nuevo Producto / Nueva Caja / Guardar). */
+export function GradientButton({
+  children,
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-600 dark:bg-violet-950 dark:text-violet-300">
-      {label}
-    </span>
-  );
-}
-
-// ---- helpers -----------------------------------------------------------------------
-
-/** First latin letter of userName || email — the avatar's initial fallback. */
-export function initialFor(userName: string, email: string): string {
-  const source = (userName || email || "").trim();
-  for (const ch of source) {
-    if (/[a-zA-Z]/.test(ch)) return ch.toUpperCase();
-  }
-  return "S";
-}
-
-/** Today's " HH:MM" time suffix for exam/datetime lines ("9:00 AM"). */
-export function formatClockShort(date: Date): string {
-  let hours = date.getHours() % 12;
-  if (hours === 0) hours = 12;
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  return `${hours}:${minutes} ${date.getHours() < 12 ? "AM" : "PM"}`;
-}
-
-export function Spinner({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden
+    <button
+      type="button"
       className={cn(
-        "inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent",
+        "pos-gradient inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-white/40 disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
-    />
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The emerald success button (COBRAR / Abrir Turno / Iniciar Turno). */
+export function SuccessButton({
+  children,
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "pos-gradient-success inline-flex items-center justify-center gap-2 rounded-lg font-semibold text-white outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-white/40 disabled:pointer-events-none disabled:opacity-60",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Small square icon button (table actions). */
+export function IconButton({
+  label,
+  icon: Icon,
+  tone = "default",
+  className,
+  ...props
+}: {
+  label: string;
+  icon: LucideIcon;
+  tone?: "default" | "danger";
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sf-primary/40",
+        tone === "danger"
+          ? "text-slate-400 hover:bg-red-500/10 hover:text-red-400"
+          : "text-slate-400 hover:bg-white/5 hover:text-white",
+        className,
+      )}
+      {...props}
+    >
+      <Icon className="h-4.5 w-4.5" strokeWidth={2} />
+    </button>
   );
 }

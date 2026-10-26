@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // The server-side auth layer (the next/headers half — src/lib/auth.ts is the
-// pure seam). Reads the `sf_session` httpOnly cookie through the request
+// pure seam). Reads the `pos_session` httpOnly cookie through the request
 // cookie store, verifies the HMAC token, resolves the user; builds the
 // session/clear cookie helpers the auth routes answer with.
 //
@@ -17,7 +17,7 @@ import { UnauthorizedError } from "./http";
 
 // ---- the session cookie contract ------------------------------------------------
 
-export const SESSION_COOKIE_NAME = "sf_session";
+export const SESSION_COOKIE_NAME = "pos_session";
 /** 7 days — mirrors SESSION_TTL_MS in the pure seam. */
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -29,13 +29,6 @@ const SESSION_USER_SELECT = {
   id: true,
   email: true,
   fullName: true,
-  themeMode: true,
-  accentColor: true,
-  avatarEmoji: true,
-  notificationsEnabled: true,
-  schoolName: true,
-  gradeLevel: true,
-  studyGoalHours: true,
   emailVerified: true,
   createdAt: true,
   updatedAt: true,
@@ -45,13 +38,6 @@ export type SessionUser = {
   id: string;
   email: string;
   fullName: string;
-  themeMode: string;
-  accentColor: string;
-  avatarEmoji: string;
-  notificationsEnabled: boolean;
-  schoolName: string;
-  gradeLevel: string;
-  studyGoalHours: number;
   emailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -64,13 +50,6 @@ export function publicUser(user: SessionUser) {
     id: user.id,
     email: user.email,
     name: user.fullName,
-    themeMode: user.themeMode,
-    accentColor: user.accentColor,
-    avatarEmoji: user.avatarEmoji,
-    notificationsEnabled: user.notificationsEnabled,
-    schoolName: user.schoolName,
-    gradeLevel: user.gradeLevel,
-    studyGoalHours: user.studyGoalHours,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
@@ -79,7 +58,7 @@ export function publicUser(user: SessionUser) {
 
 // ---- reading the session ---------------------------------------------------------
 
-/** Resolve the signed-in user from the `sf_session` cookie, or null. The
+/** Resolve the signed-in user from the `pos_session` cookie, or null. The
  *  token verification (HMAC + expiry) is the pure seam's job; the DB lookup
  *  proves the user still exists (a deleted account's cookie is dead). */
 export async function getCurrentUser(): Promise<SessionUser | null> {

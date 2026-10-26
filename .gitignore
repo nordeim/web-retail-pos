@@ -57,3 +57,7 @@ research/
 # local scratch — never committed
 e2e-run.log
 work/
+
+# playwright artifacts
+test-results/
+playwright-report/

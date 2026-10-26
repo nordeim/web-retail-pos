@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// POST /api/auth/logout — clears the sf_session cookie (maxAge 0). The
+// POST /api/auth/logout — clears the pos_session cookie (maxAge 0). The
 // stateless token dies client-side; the cookie is doubly dead afterwards.
 // ---------------------------------------------------------------------------
 

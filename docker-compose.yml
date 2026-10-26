@@ -1,4 +1,4 @@
-# StudyFlow (Omni-Study) — one-command containerized deployment.
+# VeloxPOS — one-command containerized deployment.
 #
 # First run (initializes the SQLite volume, then starts the app):
 #   AUTH_SECRET="$(openssl rand -hex 32)" docker compose --profile init up
@@ -9,13 +9,13 @@
 # The full walkthrough lives in docs/DEPLOYMENT.md §Docker.
 
 services:
-  studyflow:
+  veloxpos:
     build:
       context: .
-    image: studyflow:latest
+    image: veloxpos:latest
     restart: unless-stopped
     ports:
-      - "${STUDYFLOW_PORT:-3000}:3000"
+      - "${VELOXPOS_PORT:-3000}:3000"
     environment:
       # REQUIRED in production (DEPLOYMENT.md §3) — generate with
       # `openssl rand -hex 32`. Refuses to boot with the placeholder.
@@ -36,7 +36,7 @@ services:
   init:
     build:
       context: .
-    image: studyflow:latest
+    image: veloxpos:latest
     profiles: ["init"]
     environment:
       DATABASE_URL: "file:/data/custom.db"

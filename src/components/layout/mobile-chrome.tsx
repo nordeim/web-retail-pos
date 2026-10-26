@@ -1,42 +1,32 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// The below-lg chrome (§5): a fixed h-16 glass app bar (hamburger + 32px
-// gradient brand chip + "StudyFlow" + a live clock — NEVER the view title)
-// and the slide-in navigation drawer. Reference-measured drawer geometry the
-// e2e suite pins: a full-viewport dialog over a bg-black/20 backdrop-blur-xs
-// backdrop button, a 288px (w-72) white panel (dark: slate-950) with the
-// 40px-chip brand header + "Your study companion" + all 20 shared
-// NavItemLinks and NO footer; Esc and backdrop-tap close it; body scroll is
-// locked while open.
+// The below-lg chrome — THE SUPERSET FIX for the reference's broken mobile
+// navigation. On the reference (measured 390×844, 2026-10-26) the 220px
+// sidebar stays fixed-OPEN on phones, covers the content, and offers no
+// hamburger/drawer/backdrop. This component ships the working pattern the
+// repo proved on the StudyFlow port, restyled to the POS dark system:
 //
-// Trap 4: the nav list is flex flex-col gap-* — never space-y-* with mt-*/
-// mb-* children (v4's :where() rewrite flips the specificity outcome).
+//   • a fixed h-16 app bar (hamburger + brand) — lg:hidden
+//   • a slide-in drawer (w-72, max-w-[85vw]) over a bg-black/60 backdrop
+//   • closes on: item tap, backdrop tap, Escape, and crossing lg
+//   • body scroll locked while open
+//
+// Tailwind v4 trap discipline: the nav list is flex flex-col gap-* — NEVER
+// space-y-* with mt-*/mb-* children (trap 4); the backdrop blur is
+// backdrop-blur-xs (v4 name, trap 9).
 // ---------------------------------------------------------------------------
 
 import * as React from "react";
-import { GraduationCap, Menu, X } from "lucide-react";
+import { X, Zap } from "lucide-react";
 
 import { NavItemLink } from "@/components/layout/nav-items";
 import { NAV_ITEMS } from "@/lib/router";
-import { formatTime12h } from "@/lib/date";
 import { useAppStore } from "@/lib/store";
-
-/** Ticking clock — 1s interval, cleaned up on unmount (client-only mount). */
-function useNow(): Date {
-  const [now, setNow] = React.useState(() => new Date());
-  React.useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
-}
 
 export function MobileChrome() {
   const mobileMenuOpen = useAppStore((s) => s.mobileMenuOpen);
   const setMobileMenu = useAppStore((s) => s.setMobileMenu);
-  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
-  const now = useNow();
   const close = React.useCallback(() => setMobileMenu(false), [setMobileMenu]);
 
   // While the drawer is open: lock body scroll, close on Escape, and close
@@ -66,37 +56,43 @@ export function MobileChrome() {
 
   return (
     <>
-      {/* App bar (the page's banner): brand + clock on BOTH sides of the
-          hamburger — the reference never swaps in the view title. */}
-      <header className="glass fixed left-0 right-0 top-0 z-30 flex h-16 items-center justify-between px-4 lg:hidden">
+      {/* App bar — the page's banner below lg. */}
+      <header
+        data-testid="mobile-appbar"
+        className="fixed left-0 right-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#1e2235] bg-[#0d0f1a] px-4 lg:hidden"
+      >
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
-            aria-label="Open navigation menu"
+            aria-label="Abrir menú de navegación"
             aria-expanded={mobileMenuOpen}
+            data-testid="mobile-hamburger"
             onClick={() => setMobileMenu(true)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 outline-none transition-colors hover:bg-slate-100/70 focus-visible:ring-2 focus-visible:ring-sf-primary/40 dark:text-slate-300 dark:hover:bg-slate-800/60"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/60 outline-none transition-colors hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-sf-primary/40"
           >
-            <Menu className="h-5 w-5" strokeWidth={2} />
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <line x1="4" x2="20" y1="6" y2="6" />
+              <line x1="4" x2="20" y1="12" y2="12" />
+              <line x1="4" x2="20" y1="18" y2="18" />
+            </svg>
           </button>
           <span
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white sf-print-exact"
-            style={{
-              backgroundImage:
-                "linear-gradient(to right, rgb(var(--sf-primary)), rgb(var(--sf-primary-gradient-to)))",
-            }}
+            aria-hidden
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white pos-gradient shadow-[0_4px_16px_rgb(99_102_241/0.45)]"
           >
-            <GraduationCap className="h-4 w-4" strokeWidth={2} />
+            <Zap className="h-4 w-4" strokeWidth={2.2} />
           </span>
-          <span className="text-base font-bold text-slate-800 dark:text-slate-100">
-            StudyFlow
-          </span>
+          <span className="truncate text-base font-bold text-white">Mi Tienda</span>
         </div>
-        {/* S3-L part 1 (measured s68): the reference app-bar clock reads
-            14px/500 slate-600 — the old 600/slate-700 read a step heavier. */}
-        <p className="shrink-0 text-sm font-medium text-slate-600 dark:text-slate-200">
-          {formatTime12h(now)}
-        </p>
       </header>
 
       {/* The slide-in drawer — mounted only while open. */}
@@ -104,66 +100,45 @@ export function MobileChrome() {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Navigation menu"
+          aria-label="Menú de navegación"
+          data-testid="mobile-drawer"
           className="fixed inset-0 z-50"
         >
           <button
             type="button"
-            aria-label="Close navigation menu"
+            aria-label="Cerrar menú de navegación"
+            data-testid="mobile-drawer-backdrop"
             onClick={close}
-            className="absolute inset-0 bg-black/20 backdrop-blur-xs"
+            className="absolute inset-0 bg-black/60 backdrop-blur-xs"
           />
-          <div className="sf-slide-in absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl dark:bg-slate-950">
-            {/* S3-L (measured s68): the reference brand block is p-6 with a
-                border-b divider (89px tall) — the old p-6 pb-4 (80px, no
-                divider) dropped the line the reference draws under it. */}
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 p-6 dark:border-slate-800">
+          <div className="pos-slide-in absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-[#1e2235] bg-[#0d0f1a] shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#1e2235] p-4">
               <div className="flex items-center gap-3">
                 <span
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white sf-print-exact"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(to right, rgb(var(--sf-primary)), rgb(var(--sf-primary-gradient-to)))",
-                  }}
+                  aria-hidden
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white pos-gradient shadow-[0_4px_16px_rgb(99_102_241/0.45)]"
                 >
-                  <GraduationCap className="h-5 w-5" strokeWidth={2} />
+                  <Zap className="h-5 w-5" strokeWidth={2.2} />
                 </span>
-                <div>
-                  <p className="text-base font-bold text-slate-800 dark:text-slate-100">
-                    StudyFlow
-                  </p>
-                  {/* S3-L note (measured s68): the reference renders this
-                      subtitle text-slate-400 (2.56:1 — an axe failure); the
-                      clone keeps slate-500 (4.76:1) — the documented
-                      a11y-superset deviation. */}
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Your study companion
-                  </p>
-                </div>
+                <p className="text-[17px] font-bold text-white">Mi Tienda</p>
               </div>
               <button
                 type="button"
-                aria-label="Close menu"
+                aria-label="Cerrar menú"
+                data-testid="mobile-drawer-close"
                 onClick={close}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 outline-none transition-colors hover:bg-slate-100/70 focus-visible:ring-2 focus-visible:ring-sf-primary/40 dark:text-slate-400 dark:hover:bg-slate-800/60"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/50 outline-none transition-colors hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-sf-primary/40"
               >
                 <X className="h-5 w-5" strokeWidth={2} />
               </button>
             </div>
-            {/* Shares the sidebar's collapsed state (icon-only links when the
-                rail is collapsed — the reference's own drawer behavior). */}
             <nav
-              aria-label="Primary"
-              className="sf-scroll flex flex-1 flex-col overflow-y-auto p-4"
+              aria-label="Navegación principal"
+              data-testid="mobile-drawer-nav"
+              className="flex flex-1 flex-col gap-1 overflow-y-auto p-3"
             >
               {NAV_ITEMS.map((item) => (
-                <NavItemLink
-                  key={item.id}
-                  view={item.id}
-                  collapsed={sidebarCollapsed}
-                  onNavigate={close}
-                  tone="drawer"
-                />
+                <NavItemLink key={item.id} view={item.id} onNavigate={close} />
               ))}
             </nav>
           </div>

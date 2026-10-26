@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       return rateLimitedResponse(limit.retryAfterSec, "Too many attempts. Try again shortly.");
     }
 
-    const { password, newEmail } = parseWith(
+    const { password, email: newEmail } = parseWith(
       changeEmailSchema,
       await readJson(request),
     );

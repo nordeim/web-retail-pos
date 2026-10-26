@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# StudyFlow (Omni-Study) — production container.
+# VeloxPOS — production container.
 #
 # Multi-stage build per docs/DEPLOYMENT.md §Docker:
 #   deps-prod → the runtime dependency set (incl. the prisma CLI, so the

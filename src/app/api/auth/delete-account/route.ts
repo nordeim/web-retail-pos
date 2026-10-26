@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
       return errorResponse(400, "Your password is incorrect.");
     }
 
-    // The ONE cascade write — subjects, tasks, notes, decks, grades, files,
-    // chat, RUM events, tokens: every user relation carries Cascade.
+    // The ONE cascade write — products, categories, registers, cashiers,
+    // shifts, sales, settings, tokens: every user relation carries Cascade.
     await db.user.delete({ where: { id: user.id } });
 
     return clearSessionCookie(NextResponse.json({ ok: true }));

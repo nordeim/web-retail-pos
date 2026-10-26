@@ -14,13 +14,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await db.$queryRaw`SELECT 1`;
-    return NextResponse.json({ status: "ok", db: "up", app: "studyflow" });
+    return NextResponse.json({ status: "ok", db: "up", app: "veloxpos" });
   } catch (err: unknown) {
     // The health endpoint is the one place a server-side log is expected —
     // the probe IS the signal; the body stays uniform.
-    console.error("[health] db probe failed:", err);
+    console.error("[h[health] db probe failed:", err);
     return NextResponse.json(
-      { status: "degraded", db: "down", app: "studyflow" },
+      { status: "degraded", db: "down", app: "veloxpos" },
       { status: 503 },
     );
   }

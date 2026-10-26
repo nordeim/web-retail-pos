@@ -1,56 +1,42 @@
 // ---------------------------------------------------------------------------
-// The entity delegates (ADR-006): one configuration object per owned model,
-// consumed by the makeCollectionRoutes/makeItemRoutes factories. Every query
-// is scoped where:{userId} — ownership by construction; updates/removes
-// verify ownership BEFORE mutating (an unscoped query cannot be written
-// through this seam). Every payload passes its Zod schema first.
-//
-// Two special delegates: study-groups (the members JSON column — array at
-// the boundary, JSON.stringify on write, JSON.parse on read) and flashcard
-// cards (Flashcard carries NO userId — ownership scopes through the deck,
-// with a deck-ownership guard on create/update).
+// The entity delegates (ADR-006, VeloxPOS edition): one configuration object
+// per master-data model, consumed by the makeCollectionRoutes/makeItemRoutes
+// factories. Every query is scoped where:{userId} — ownership by
+// construction; updates/removes verify ownership BEFORE mutating. Every
+// payload passes its Zod schema first. The transactional surfaces (shift
+// open/close, checkout) live in src/lib/server/pos.ts — they are NOT CRUD.
 // ---------------------------------------------------------------------------
 
 import type { ZodType } from "zod";
 
-import { normalizeMembers, type GroupMember } from "../group-members";
 import { db } from "../db";
 import {
-  assignmentSchema,
-  examSchema,
-  eventSchema,
-  flashcardDeckSchema,
-  flashcardSchema,
-  focusSessionSchema,
-  gradeSchema,
-  holidaySchema,
-  noteSchema,
-  notebookSchema,
-  practiceTestSchema,
-  studyGroupSchema,
-  subjectSchema,
-  taskListSchema,
-  taskSchema,
-  timetableClassSchema,
+  cashierCreateSchema,
+  cashierUpdateSchema,
+  categoryCreateSchema,
+  categoryUpdateSchema,
+  productCreateSchema,
+  productUpdateSchema,
+  registerCreateSchema,
+  registerUpdateSchema,
 } from "../validation";
-import {
-  NotFoundError,
-  parseWith,
-  ValidationError,
-  type EntityDelegate,
-} from "./http";
+import { NotFoundError, parseWith, type EntityDelegate } from "./http";
 
 // ---- the minimal structural Prisma model --------------------------------------
 
+type Row = Record<string, unknown>;
+
 /**
- * The slice of a Prisma delegate this seam needs. Prisma's generated model
- * delegates are structurally compatible (methods compare bivariantly; the
- * concrete args/returns are always assignable both ways for these shapes).
+ * The structural slice the factory needs. The Prisma delegates are cast
+ * INTO this shape at the config sites below (one `as OwnedModel` per
+ * model): Prisma's generic update/create signatures don't structurally
+ * accept `data: unknown` under strictFunctionTypes, but the factory only
+ * ever passes schema-parsed rows. The cast is the documented seam boundary.
  */
 type OwnedModel = {
   findMany(args: {
     where: { userId: string };
-    orderBy?: { createdAt: "asc" | "desc" };
+    orderBy?: { createdAt: "asc" | "desc" } | { name: "asc" };
   }): Promise<unknown[]>;
   findFirst(args: { where: Record<string, unknown> }): Promise<unknown>;
   create(args: { data: unknown }): Promise<unknown>;
@@ -58,116 +44,54 @@ type OwnedModel = {
   delete(args: { where: { id: string } }): Promise<unknown>;
 };
 
-type Row = Record<string, unknown>;
-
-// ---- the owned-delegate factory -------------------------------------------------
-
-type OwnedConfig = {
-  model: OwnedModel;
-  createSchema: ZodType<Row>;
-  updateSchema: ZodType<Row>;
-  /** Columns carrying date-time strings at the boundary → Date on write. */
-  dateFields?: readonly string[];
-  /** Post-read normalizer (e.g. the study-groups members JSON column). */
-  fromRow?: (row: unknown) => unknown;
-  /** Pre-write normalizer applied after the date conversion. */
-  writeTransform?: (data: Row) => Row;
-  orderBy?: "asc" | "desc";
-};
-
-function datesOnWrite(data: Row, dateFields: readonly string[]): Row {
-  const out: Row = {};
-  for (const [key, value] of Object.entries(data)) {
-    out[key] =
-      dateFields.includes(key) && typeof value === "string"
-        ? new Date(value)
-        : value;
-  }
-  return out;
-}
+// ---- the sent-keys PATCH filter (S81/S82 lesson, kept verbatim) -----------------
 
 /**
- * S82/AI1 (the AH8 sent-keys filter extracted, and extended to the
- * sixteenth write site): zod@4's `.partial()` does NOT suppress
- * create-time `.default()` — `noteSchema.partial().parse({title})`
- * materializes `{title, content: "", tags: "[]"}` (verified empirically
- * in S81), so writing the parsed object verbatim resets EVERY defaulted
- * field on every partial PATCH. Absent keys are NOT writes: keep only
- * the keys the caller actually sent, INTERSECTED with the keys the
- * schema actually parsed (S82/AI5: `writes` then only ever contains
- * schema-validated keys — an unknown sent key is dropped here by
- * contract, not by Prisma's implicit skip-undefined semantics). An
- * explicitly-sent undefined is indistinguishable from an absent key and
- * is not a meaningful write either way.
- *
- * The S81 lesson, generalized: EVERY partial-PATCH write site needs this
- * filter — the factory's fifteen delegates, the hand-written flashcard
- * card delegate (Flashcard carries no userId; ownership rides the deck
- * join, which is why it was never routed through the factory), AND the
- * folder delegate (S83/AJ1 — the seventeenth site, routed through this
- * helper so the convention admits no hand-written exceptions).
+ * zod@4's `.partial()` does NOT suppress create-time `.default()` — a parsed
+ * partial materializes every defaulted field, so writing it verbatim would
+ * reset untouched columns on every PATCH. Keep only the keys the caller
+ * actually sent, INTERSECTED with the keys the schema actually parsed.
  */
-export const sentKeysPatch = (
-  input: unknown,
-  parsed: Row,
-): Row => {
+export const sentKeysPatch = (input: unknown, parsed: Row): Row => {
   const source = (input ?? {}) as Row;
   const writes: Row = {};
   for (const key of Object.keys(source)) {
     if (source[key] === undefined) continue;
-    if (!(key in parsed)) continue; // S82/AI5: schema-validated keys only
+    if (!(key in parsed)) continue;
     writes[key] = parsed[key];
   }
   return writes;
 };
 
-function makeOwnedDelegate(config: OwnedConfig): EntityDelegate {
-  const { model, createSchema, updateSchema, fromRow, writeTransform } = config;
-  const dateFields = config.dateFields ?? [];
-  const orderBy = config.orderBy ?? "asc";
+// ---- the owned-delegate factory ---------------------------------------------------
 
-  const normalize = (row: unknown): unknown => (fromRow ? fromRow(row) : row);
-  const toWrite = (data: Row): Row => {
-    const withDates = datesOnWrite(data, dateFields);
-    return writeTransform ? writeTransform(withDates) : withDates;
-  };
+type OwnedConfig = {
+  model: OwnedModel;
+  createSchema: ZodType<Row>;
+  updateSchema: ZodType<Row>;
+  orderBy?: "asc" | "desc";
+  listArgs?: { orderBy: { name: "asc" } | { createdAt: "asc" | "desc" } };
+};
+
+function makeOwnedDelegate(config: OwnedConfig): EntityDelegate {
+  const { model, createSchema, updateSchema } = config;
+  const listArgs = config.listArgs ?? { orderBy: { createdAt: "asc" as const } };
 
   return {
-    list: (userId) =>
-      model
-        .findMany({ where: { userId }, orderBy: { createdAt: orderBy } })
-        .then((rows) => rows.map(normalize)),
+    list: (userId) => model.findMany({ where: { userId }, ...listArgs }),
 
     create: async (userId, input) => {
       const parsed = parseWith(createSchema, input);
-      const row = await model.create({
-        data: { ...toWrite(parsed), userId },
-      });
-      return normalize(row);
+      return model.create({ data: { ...(parsed as Row), userId } });
     },
 
     update: async (userId, id, input) => {
       const existing = await model.findFirst({ where: { id, userId } });
       if (!existing) throw new NotFoundError();
       const parsed = parseWith(updateSchema, input);
-      // S81/AH8 → S82/AI1: the sent-keys filter (see sentKeysPatch) —
-      // one shared helper covers the factory's fifteen delegates and the
-      // flashcard card delegate below.
       const writes = sentKeysPatch(input, parsed);
-      if (Object.keys(writes).length === 0) {
-        // An empty patch is a no-op — short-circuit to the existing row
-        // (S83/AJ2, verified against the resolved Prisma runtime (6.19.3 at the S84 re-probe; the ^6.11.1 range): an update with an empty
-        // data object is ACCEPTED as a no-op — the row returns unchanged
-        // and @updatedAt is NOT bumped — so the short-circuit exists to
-        // avoid the pointless write and to normalize behavior across the
-        // three write-site families, not to dodge a client rejection).
-        return normalize(existing);
-      }
-      const row = await model.update({
-        where: { id },
-        data: toWrite(writes as Row),
-      });
-      return normalize(row);
+      if (Object.keys(writes).length === 0) return existing;
+      return model.update({ where: { id }, data: writes });
     },
 
     remove: async (userId, id) => {
@@ -179,210 +103,46 @@ function makeOwnedDelegate(config: OwnedConfig): EntityDelegate {
   };
 }
 
-// ---- the members JSON column (study-groups) ----------------------------------------
+// ---- the VeloxPOS delegates --------------------------------------------------------
 
-// GroupMember is the seam's exported interface (src/lib/group-members.ts) —
-// AM4 (the s86 audit's I3): one type for both sides of the boundary, not a
-// local twin that can silently drift from the client's shape.
+export const categoriesDelegate = makeOwnedDelegate({
+  model: db.category as unknown as OwnedModel,
+  createSchema: categoryCreateSchema,
+  updateSchema: categoryUpdateSchema,
+  listArgs: { orderBy: { name: "asc" } },
+});
 
-/** The API boundary carries members as an ARRAY; the column is a JSON
- *  string. Corrupt/absent JSON normalizes to [] (never throws to the view).
- *  Exported for the S88/AO3 unit pins (the sentKeysPatch precedent — the
- *  pure seam is directly pinnable; see tests/group-members.test.ts).
- *
- *  S88/AO3 — the server READ symmetry (the s88 audit's Info 1, the S87
- *  lesson-4 question): the read now routes through the SAME normalizeMembers
- *  the client seam applies — trim + blank-drop + shape validation. Pre-fix
- *  this JSON.parsed the legacy column and returned the array VERBATIM, so
- *  an API consumer reading a legacy pre-AM1 padded row saw padded values
- *  until the row's first re-write; both boundaries of the boundary now
- *  agree. The array-input tolerance (a non-string members value was wiped
- *  to [] pre-fix) matches the client seam's alternate-boundary doctrine. */
-export function membersFromRow(row: unknown): unknown {
-  if (typeof row !== "object" || row === null) return row;
-  const record = row as { members?: unknown };
-  record.members = normalizeMembers(record.members);
-  return record;
+export const productsDelegate = makeOwnedDelegate({
+  model: db.product as unknown as OwnedModel,
+  createSchema: productCreateSchema,
+  updateSchema: productUpdateSchema,
+  listArgs: { orderBy: { createdAt: "desc" } },
+});
+
+export const registersDelegate = makeOwnedDelegate({
+  model: db.cashRegister as unknown as OwnedModel,
+  createSchema: registerCreateSchema,
+  updateSchema: registerUpdateSchema,
+  listArgs: { orderBy: { name: "asc" } },
+});
+
+export const cashiersDelegate = makeOwnedDelegate({
+  model: db.cashier as unknown as OwnedModel,
+  createSchema: cashierCreateSchema,
+  updateSchema: cashierUpdateSchema,
+  listArgs: { orderBy: { createdAt: "asc" } },
+});
+
+/** Guard helper: assert a user-owned row exists or 404 (pre-check pattern). */
+export async function requireOwned(
+  model: { findFirst(args: { where: Record<string, unknown> }): Promise<unknown> },
+  userId: string,
+  id: string,
+  message = "That record does not exist.",
+): Promise<Row> {
+  const row = (await model.findFirst({ where: { id, userId } })) as Row | null;
+  if (!row) throw new NotFoundError(message);
+  return row;
 }
 
-function membersToWrite(data: Row): Row {
-  const out: Row = { ...data };
-  if (Array.isArray(out.members)) {
-    out.members = JSON.stringify(out.members as GroupMember[]);
-  }
-  return out;
-}
-
-// ---- the sixteen delegates -----------------------------------------------------------
-
-export const taskListDelegate = makeOwnedDelegate({
-  model: db.taskList as unknown as OwnedModel,
-  createSchema: taskListSchema,
-  updateSchema: taskListSchema.partial(),
-});
-
-export const taskDelegate = makeOwnedDelegate({
-  model: db.task as unknown as OwnedModel,
-  createSchema: taskSchema,
-  updateSchema: taskSchema.partial(),
-  dateFields: ["dueDate"],
-});
-
-export const subjectDelegate = makeOwnedDelegate({
-  model: db.subject as unknown as OwnedModel,
-  createSchema: subjectSchema,
-  updateSchema: subjectSchema.partial(),
-});
-
-export const assignmentDelegate = makeOwnedDelegate({
-  model: db.assignment as unknown as OwnedModel,
-  createSchema: assignmentSchema,
-  updateSchema: assignmentSchema.partial(),
-  dateFields: ["dueDate"],
-});
-
-export const examDelegate = makeOwnedDelegate({
-  model: db.exam as unknown as OwnedModel,
-  createSchema: examSchema,
-  updateSchema: examSchema.partial(),
-  dateFields: ["date"],
-});
-
-export const eventDelegate = makeOwnedDelegate({
-  model: db.event as unknown as OwnedModel,
-  createSchema: eventSchema,
-  updateSchema: eventSchema.partial(),
-  dateFields: ["startDate", "endDate"],
-});
-
-export const timetableDelegate = makeOwnedDelegate({
-  model: db.timetableClass as unknown as OwnedModel,
-  createSchema: timetableClassSchema,
-  updateSchema: timetableClassSchema.partial(),
-});
-
-export const notebookDelegate = makeOwnedDelegate({
-  model: db.notebook as unknown as OwnedModel,
-  createSchema: notebookSchema,
-  updateSchema: notebookSchema.partial(),
-});
-
-export const noteDelegate = makeOwnedDelegate({
-  model: db.note as unknown as OwnedModel,
-  createSchema: noteSchema,
-  updateSchema: noteSchema.partial(),
-});
-
-export const flashcardDeckDelegate = makeOwnedDelegate({
-  model: db.flashcardDeck as unknown as OwnedModel,
-  createSchema: flashcardDeckSchema,
-  updateSchema: flashcardDeckSchema.partial(),
-});
-
-export const practiceTestDelegate = makeOwnedDelegate({
-  model: db.practiceTest as unknown as OwnedModel,
-  createSchema: practiceTestSchema,
-  updateSchema: practiceTestSchema.partial(),
-});
-
-export const studyGroupDelegate = makeOwnedDelegate({
-  model: db.studyGroup as unknown as OwnedModel,
-  createSchema: studyGroupSchema,
-  updateSchema: studyGroupSchema.partial(),
-  fromRow: membersFromRow,
-  writeTransform: membersToWrite,
-});
-
-export const gradeDelegate = makeOwnedDelegate({
-  model: db.grade as unknown as OwnedModel,
-  createSchema: gradeSchema,
-  updateSchema: gradeSchema.partial(),
-});
-
-export const focusSessionDelegate = makeOwnedDelegate({
-  model: db.focusSession as unknown as OwnedModel,
-  createSchema: focusSessionSchema,
-  updateSchema: focusSessionSchema.partial(),
-  dateFields: ["startedAt"],
-});
-
-export const holidayDelegate = makeOwnedDelegate({
-  model: db.holiday as unknown as OwnedModel,
-  createSchema: holidaySchema,
-  updateSchema: holidaySchema.partial(),
-  dateFields: ["date"],
-});
-
-/**
- * Flashcard cards: Flashcard carries NO userId — every access scopes
- * through the deck relation, and the deck-ownership guard re-checks the
- * target deck on create (and on a deckId-changing update).
- */
-export const flashcardCardDelegate: EntityDelegate = {
-  list: (userId) =>
-    db.flashcard.findMany({
-      where: { deck: { userId } },
-      orderBy: { createdAt: "asc" },
-    }),
-
-  create: async (userId, input) => {
-    const parsed = parseWith(flashcardSchema, input);
-    if (!parsed.deckId) {
-      throw new ValidationError("deckId: A flashcard needs a deck.");
-    }
-    const deck = await db.flashcardDeck.findFirst({
-      where: { id: parsed.deckId, userId },
-    });
-    if (!deck) throw new NotFoundError("That deck does not exist.");
-    return db.flashcard.create({
-      data: {
-        front: parsed.front,
-        back: parsed.back,
-        difficulty: parsed.difficulty,
-        mastered: parsed.mastered,
-        deckId: parsed.deckId,
-      },
-    });
-  },
-
-  update: async (userId, id, input) => {
-    const card = await db.flashcard.findFirst({
-      where: { id, deck: { userId } },
-    });
-    if (!card) throw new NotFoundError();
-    const parsed = parseWith(flashcardSchema.partial(), input);
-    // S82/AI1: the sixteenth write site — the SAME sent-keys filter as
-    // the factory (this delegate is hand-written because Flashcard
-    // carries no userId, which is also why the S81 factory fix missed
-    // it). Pre-fix: `{...parsed}` wrote the FULL defaulted object, so a
-    // study rating ({mastered:true}) reset a hard card's difficulty to
-    // "medium" and a card edit ({front,back,difficulty}) un-mastered a
-    // mastered card.
-    const data = sentKeysPatch(input, parsed) as Row & { deckId?: string };
-    if (typeof data.deckId === "string" && data.deckId !== card.deckId) {
-      const deck = await db.flashcardDeck.findFirst({
-        where: { id: data.deckId, userId },
-      });
-      if (!deck) throw new NotFoundError("That deck does not exist.");
-    } else {
-      // Not sent, or a same-value re-send — not a write.
-      delete data.deckId;
-    }
-    if (Object.keys(data).length === 0) {
-      // An empty patch is a no-op (S83/AJ2, verified against the resolved Prisma runtime (6.19.3 at the S84 re-probe; the ^6.11.1 range):
-      // an update with an empty data object is ACCEPTED as a no-op — the
-      // short-circuit avoids the pointless write, matching the factory).
-      return card;
-    }
-    return db.flashcard.update({ where: { id }, data });
-  },
-
-  remove: async (userId, id) => {
-    const card = await db.flashcard.findFirst({
-      where: { id, deck: { userId } },
-    });
-    if (!card) throw new NotFoundError();
-    await db.flashcard.delete({ where: { id } });
-    return { ok: true };
-  },
-};
+export { parseWith };

@@ -2,7 +2,7 @@
 // POST /api/auth/login — the credential exchange. Rate-limited 10/IP/15 min;
 // uniform "Invalid email or password" on any credential failure (no user
 // enumeration); unverified accounts are gated behind the reference's inline
-// copy (403 — the S15 gate). Success sets the sf_session cookie.
+// copy (403 — the S15 gate). Success sets the pos_session cookie.
 // ---------------------------------------------------------------------------
 
 import { NextResponse, type NextRequest } from "next/server";

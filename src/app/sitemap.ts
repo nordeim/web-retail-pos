@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 import { NAV_ITEMS } from "@/lib/router";
 import { siteUrl } from "@/lib/site";
 
-// Root + the 20 view paths + /login = 22 URLs (the site.test.ts contract's
+// Root + the 8 view paths + /login = 10 URLs (the site.test.ts contract's
 // documented consumer). The exact-match SPA rewrites never touch /sitemap.xml
 // (prerendered at build time).
 export default function sitemap(): MetadataRoute.Sitemap {

@@ -17,31 +17,21 @@ const nextConfig: NextConfig = {
   // docs/Tailwind-V4-Validation-Report.md, session-12 methodology note).
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   // Path-based SPA routing: the reference app's views live at real paths
-  // (/Dashboard, /MyDay, /Tasks, ... — PascalCase, measured live). We keep
-  // ONE page (src/app/page.tsx) and rewrite those paths onto it; the client
-  // store syncs view state with location.pathname (see src/lib/router.ts).
+  // (/POS, /Dashboard, /Inventory, /Sales, /Registers, /Cashiers,
+  // /Reports, /StoreSettings — PascalCase, measured live 2026-10-26). We
+  // keep ONE page (src/app/page.tsx) and rewrite those paths onto it; the
+  // client store syncs view state with location.pathname (see
+  // src/lib/router.ts).
   async rewrites() {
     return [
+      { source: "/POS", destination: "/" },
       { source: "/Dashboard", destination: "/" },
-      { source: "/MyDay", destination: "/" },
-      { source: "/Tasks", destination: "/" },
-      { source: "/Calendar", destination: "/" },
-      { source: "/Events", destination: "/" },
-      { source: "/Timetable", destination: "/" },
-      { source: "/Assignments", destination: "/" },
-      { source: "/Exams", destination: "/" },
-      { source: "/Notes", destination: "/" },
-      { source: "/Flashcards", destination: "/" },
-      { source: "/PracticeTests", destination: "/" },
-      { source: "/StudyGroups", destination: "/" },
-      { source: "/GradeTracker", destination: "/" },
-      { source: "/Analytics", destination: "/" },
-      { source: "/Files", destination: "/" },
-      { source: "/Calculator", destination: "/" },
-      { source: "/MathSolver", destination: "/" },
-      { source: "/AIAssistant", destination: "/" },
-      { source: "/FocusTimer", destination: "/" },
-      { source: "/Settings", destination: "/" },
+      { source: "/Inventory", destination: "/" },
+      { source: "/Sales", destination: "/" },
+      { source: "/Registers", destination: "/" },
+      { source: "/Cashiers", destination: "/" },
+      { source: "/Reports", destination: "/" },
+      { source: "/StoreSettings", destination: "/" },
     ];
   },
 };

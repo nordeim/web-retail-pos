@@ -1,352 +1,205 @@
 // ---------------------------------------------------------------------------
-// Every API payload contract. Zod v4 in strip mode (unknown keys dropped —
-// the repo-wide convention). Unit-pinned by tests/validation.test.ts.
+// Zod schemas — the ONE validation boundary every API route parses through.
+// Rules mirrored by the client forms: length caps, enum membership, integer
+// cents ≥ 0, real-calendar dates. Unit-pinned by tests/validation.test.ts.
 // ---------------------------------------------------------------------------
 
 import { z } from "zod";
 
-import { ACCENTS } from "./theme";
+// ---- shared primitives -------------------------------------------------------
 
-// ---- shared atoms ----------------------------------------------------------
+export const PAYMENT_METHODS = ["cash", "card", "transfer"] as const;
+export const PRODUCT_UNITS = ["Pieza", "Kilogramo", "Litro", "Paquete"] as const;
+export const CARD_PROVIDERS = ["none", "terminal", "link"] as const;
 
-const idField = z.string().min(1);
-// Dialogs send "" for cleared relations — accept it and map to null
-// (the schema must not reject the empty string BEFORE the transform).
-const nullableId = z
-  .union([idField, z.literal("")])
-  .nullish()
-  .transform((v) => (v === "" ? null : (v ?? null)));
-const boundedTitle = z.string().min(1).max(200);
-const passwordField = z.string().min(8).max(200);
-const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
-/** A date-time string; "" normalizes to null (the dialogs' clear-date path). */
-const optionalDate = z
-  .union([z.string(), z.null()])
-  .optional()
-  .transform((v) => (v === "" ? null : v));
-const requiredDate = z.string().min(1);
-/** A JSON string that parses to an array (the reference's JSON-blob columns). */
-const jsonArray = z
+/** Non-empty trimmed string with a length cap. */
+function text(max: number, label: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, `${label} es obligatorio`)
+    .max(max, `${label} debe tener ${max} caracteres como máximo`);
+}
+
+/** Optional text field ("" allowed). */
+function optionalText(max: number) {
+  return z.string().trim().max(max).default("");
+}
+
+const centsField = (label: string) =>
+  z.number({ error: `${label} debe ser un número` }).int(`${label} debe ser un entero (centavos)`).min(0, `${label} no puede ser negativo`);
+
+/** Hex color (#rgb or #rrggbb). */
+export const hexColor = z
   .string()
-  .refine((v) => {
-    try {
-      return Array.isArray(JSON.parse(v));
-    } catch {
-      return false;
-    }
+  .trim()
+  .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "Color inválido (usa #rgb o #rrggbb)");
+
+/** Data-URL image guard: accept only image/* data URLs up to ~1.5 MB. */
+export const dataUrlImage = z
+  .string()
+  .max(2_000_000, "La imagen excede el tamaño máximo (≈1.5 MB)")
+  .refine(
+    (v) => v === "" || /^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(v),
+    "Formato de imagen no soportado",
+  );
+
+// ---- categories ---------------------------------------------------------------
+
+export const categoryCreateSchema = z.object({ name: text(60, "El nombre") });
+export const categoryUpdateSchema = z.object({ name: text(60, "El nombre") });
+export type CategoryInput = z.infer<typeof categoryCreateSchema>;
+
+// ---- products ------------------------------------------------------------------
+
+const nullableId = z.string().trim().regex(/^c[a-z0-9]{20,}$/i, "Identificador inválido").nullable();
+
+export const productCreateSchema = z.object({
+  name: text(120, "El nombre"),
+  barcode: text(64, "El código de barras"),
+  categoryId: nullableId.optional(),
+  priceCents: centsField("El precio de venta"),
+  costCents: centsField("El costo").nullable().optional(),
+  stock: z.number({ error: "El stock debe ser un número" }).int().min(0, "El stock no puede ser negativo").default(0),
+  minStock: z.number({ error: "El stock mínimo debe ser un número" }).int().min(0).default(5),
+  taxRate: z.number().int().min(0).max(10000, "La tasa no puede exceder 100%").default(1600),
+  unit: z.enum(PRODUCT_UNITS).default("Pieza"),
+  imageUrl: dataUrlImage.nullable().optional(),
+  active: z.boolean().default(true),
+});
+
+export const productUpdateSchema = productCreateSchema.partial();
+
+export type ProductInput = z.infer<typeof productCreateSchema>;
+
+// ---- cash registers --------------------------------------------------------------
+
+export const registerCreateSchema = z.object({
+  name: text(60, "El nombre"),
+  location: optionalText(120),
+  active: z.boolean().default(true),
+});
+export const registerUpdateSchema = registerCreateSchema.partial();
+
+// ---- cashiers ---------------------------------------------------------------------
+
+export const cashierCreateSchema = z.object({
+  name: text(80, "El nombre"),
+  email: z.string().trim().email("Email inválido").max(120).or(z.literal("")).default(""),
+  phone: optionalText(40),
+  pin: z
+    .string()
+    .trim()
+    .regex(/^\d{4,6}$/, "El PIN debe tener entre 4 y 6 dígitos")
+    .or(z.literal(""))
+    .default(""),
+  active: z.boolean().default(true),
+});
+export const cashierUpdateSchema = cashierCreateSchema.partial();
+
+// ---- shifts -------------------------------------------------------------------------
+
+export const shiftOpenSchema = z.object({
+  registerId: z.string().trim().min(1, "Selecciona una caja"),
+  cashierId: z.string().trim().min(1, "Selecciona un cajero"),
+  openingFloatCents: centsField("El fondo de caja"),
+  notes: optionalText(500),
+});
+
+export const shiftCloseSchema = z.object({
+  closingAmountCents: centsField("El conteo final"),
+  notes: optionalText(500),
+});
+
+// ---- sales / checkout ------------------------------------------------------------------
+
+export const checkoutLineSchema = z.object({
+  productId: z.string().trim().min(1),
+  quantity: z.number().int().min(1, "La cantidad debe ser ≥ 1").max(999),
+});
+
+export const checkoutSchema = z
+  .object({
+    items: z.array(checkoutLineSchema).min(1, "El ticket está vacío").max(200),
+    paymentMethod: z.enum(PAYMENT_METHODS).default("cash"),
+    customerName: optionalText(80),
+  })
+  .refine((data) => new Set(data.items.map((i) => i.productId)).size === data.items.length, {
+    message: "El ticket tiene líneas duplicadas",
   });
-const hhmm = z.string().regex(/^\d{1,2}:\d{2}$/).refine((v) => {
-  const [h, m] = v.split(":").map(Number);
-  return h <= 23 && m <= 59;
+
+export type CheckoutInput = z.infer<typeof checkoutSchema>;
+
+// ---- store settings ----------------------------------------------------------------------
+
+export const storeSettingsSchema = z.object({
+  storeName: text(80, "El nombre de la tienda"),
+  logoUrl: dataUrlImage.nullable().optional(),
+  address: optionalText(200),
+  phone: optionalText(40),
+  email: z.string().trim().email("Email inválido").max(120).or(z.literal("")).default(""),
+  taxId: optionalText(40),
+  currency: z.enum(["MXN", "USD", "EUR"]).default("MXN"),
+  primaryColor: hexColor,
+  secondaryColor: hexColor,
+  ticketFooter: optionalText(300),
+  cardProvider: z.enum(CARD_PROVIDERS).default("none"),
 });
 
-const TASK_PRIORITIES = ["none", "low", "medium", "high"] as const;
-const ASSIGNMENT_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
-const REPEATS = ["none", "daily", "weekly", "monthly"] as const;
+export type StoreSettingsInput = z.infer<typeof storeSettingsSchema>;
 
-// ---- auth ------------------------------------------------------------------
-
-export const loginSchema = z.object({
-  email: z.string().email(),
-  password: passwordField,
-});
+// ---- auth (kept from the inherited stack; VeloxPOS copy) -----------------------------------
 
 export const registerSchema = z.object({
-  fullName: z.string().max(100).optional().default(""),
-  email: z.string().email(),
-  password: passwordField,
+  fullName: text(80, "El nombre"),
+  email: z.string().trim().email("Email inválido").max(120),
+  password: z
+    .string()
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .max(72, "La contraseña debe tener 72 caracteres como máximo")
+    .regex(/[A-Z]/, "Incluye al menos una letra mayúscula")
+    .regex(/[a-z]/, "Incluye al menos una letra minúscula")
+    .regex(/[0-9]/, "Incluye al menos un número"),
 });
 
-export const verifyEmailSchema = z.object({
-  email: z.string().email(),
-  code: z.string().regex(/^\d{6}$/),
+export const loginSchema = z.object({
+  email: z.string().trim().email("Email inválido").max(120),
+  password: z.string().min(1, "La contraseña es obligatoria").max(72),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email("Email inválido").max(120),
 });
 
 export const resetPasswordSchema = z.object({
-  token: z.string().regex(/^[0-9a-f]{48}$/),
-  password: passwordField,
+  token: z.string().trim().min(10).max(128),
+  password: registerSchema.shape.password,
+});
+
+export const verifyEmailSchema = z.object({
+  email: z.string().trim().email("Email inválido").max(120),
+  code: z.string().trim().regex(/^\d{6}$/, "El código debe tener 6 dígitos"),
+});
+
+export const resendVerificationSchema = z.object({
+  email: z.string().trim().email("Email inválido").max(120),
 });
 
 export const changePasswordSchema = z
   .object({
-    currentPassword: passwordField,
-    newPassword: passwordField,
-  })
-  .refine((v) => v.currentPassword !== v.newPassword, {
-    message: "The new password must be different from your current password.",
+    currentPassword: z.string().min(1, "Ingresa tu contraseña actual").max(72),
+    newPassword: registerSchema.shape.password,
   });
 
-export const deleteAccountSchema = z
-  .object({
-    password: passwordField,
-    confirmation: z.string(),
-  })
-  .refine((v) => v.confirmation === "DELETE", {
-    message: "Type DELETE to confirm.",
-  });
+export const changeEmailSchema = z.object({
+  password: z.string().min(1, "Ingresa tu contraseña").max(72),
+  email: z.string().trim().email("Email inválido").max(120),
+});
 
-export const changeEmailSchema = z
-  .object({
-    password: passwordField,
-    newEmail: z.string().max(200).email(),
-    confirmEmail: z.string().max(200).email(),
-  })
-  .refine((v) => v.newEmail === v.confirmEmail, {
-    message: "The email addresses do not match.",
-  });
-
-// ---- settings (S17 study profile + theme preferences) ------------------------
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Ingresa tu contraseña").max(72),
+});
 
 export const preferencesSchema = z.object({
-  themeMode: z.enum(["light", "dark", "system"]).optional(),
-  accentColor: z.enum(ACCENTS).optional(),
-  avatarEmoji: z.string().max(8).optional(),
-  displayName: z.string().max(100).optional(),
-  schoolName: z.string().max(120).optional(),
-  gradeLevel: z
-    .enum([
-      "6th Grade",
-      "7th Grade",
-      "8th Grade",
-      "9th Grade",
-      "10th Grade",
-      "11th Grade",
-      "12th Grade",
-      "College Freshman",
-      "College Sophomore",
-      "College Junior",
-      "College Senior",
-      "Graduate",
-    ])
-    .optional(),
-  studyGoalHours: z.number().int().min(1).max(12).optional(),
-  notificationsEnabled: z.boolean().optional(),
-});
-
-// ---- entities ---------------------------------------------------------------
-
-export const subjectSchema = z.object({
-  name: boundedTitle,
-  color: hexColor.optional().default("#8b5cf6"),
-});
-
-export const taskListSchema = z.object({
-  name: boundedTitle,
-});
-
-export const taskSchema = z.object({
-  title: boundedTitle,
-  notes: z.string().max(5000).optional().default(""),
-  listId: nullableId,
-  subjectId: nullableId,
-  completed: z.boolean().optional().default(false),
-  important: z.boolean().optional().default(false),
-  dueDate: optionalDate,
-  priority: z.enum(TASK_PRIORITIES).optional().default("none"),
-  repeat: z.enum(REPEATS).optional().default("none"),
-  myDay: z.boolean().optional().default(false),
-  subtasks: jsonArray.optional().default("[]"),
-});
-
-export const assignmentSchema = z.object({
-  title: boundedTitle,
-  description: z.string().max(5000).optional().default(""),
-  subjectId: nullableId,
-  dueDate: optionalDate,
-  type: z
-    .enum(["homework", "essay", "project", "reading", "lab", "presentation", "other", "worksheet"])
-    .optional()
-    .default("homework"),
-  progress: z.number().int().min(0).max(100).optional().default(0),
-  priority: z.enum(ASSIGNMENT_PRIORITIES).optional().default("medium"),
-});
-
-export const examSchema = z.object({
-  title: boundedTitle,
-  date: requiredDate,
-  subjectId: nullableId,
-  type: z
-    .enum(["test", "quiz", "midterm", "final", "oral", "practical"])
-    .optional()
-    .default("test"),
-  duration: z.number().int().min(5).max(600).optional().default(60),
-  topics: jsonArray.optional().default("[]"),
-  // S76/AC5 (measured on the reference): the Add Exam dialog carries a
-  // Location input ("e.g., Room 101, Hall A") and the card renders a
-  // map-pin row when set — the eventSchema location pattern.
-  location: z.string().max(200).optional().default(""),
-});
-
-export const eventSchema = z.object({
-  title: boundedTitle,
-  startDate: requiredDate,
-  endDate: optionalDate,
-  allDay: z.boolean().optional().default(false),
-  color: hexColor.optional().default("#8b5cf6"),
-  location: z.string().max(200).optional().default(""),
-  repeat: z.enum(REPEATS).optional().default("none"),
-  reminders: jsonArray.optional().default("[]"),
-  description: z.string().max(1000).optional().default(""),
-});
-
-export const timetableClassSchema = z.object({
-  name: boundedTitle,
-  dayOfWeek: z.number().int().min(0).max(6),
-  startTime: hhmm,
-  endTime: hhmm,
-  subjectId: nullableId,
-  room: z.string().max(100).optional().default(""),
-  weekType: z.enum(["ALL", "A", "B"]).optional().default("ALL"),
-});
-
-export const notebookSchema = z.object({
-  name: boundedTitle,
-});
-
-export const noteSchema = z.object({
-  title: boundedTitle,
-  content: z.string().max(100_000).optional().default(""),
-  tags: z.string().max(2000).optional().default("[]"),
-  notebookId: nullableId,
-  subjectId: nullableId,
-});
-
-export const flashcardDeckSchema = z.object({
-  name: boundedTitle,
-  description: z.string().max(1000).optional().default(""),
-  color: hexColor.optional().default("#8b5cf6"),
-  subjectId: nullableId,
-});
-
-export const flashcardSchema = z.object({
-  // deckId is injected by the create route from the URL (/api/flashcards/cards
-  // is nested under a deck); the schema keeps it optional so update PATCHes
-  // that only flip difficulty/mastered validate unchanged.
-  deckId: idField.optional(),
-  front: z.string().min(1).max(2000),
-  back: z.string().min(1).max(2000),
-  difficulty: z.enum(["easy", "medium", "hard"]).optional().default("medium"),
-  mastered: z.boolean().optional().default(false),
-});
-
-export const practiceTestSchema = z.object({
-  title: boundedTitle,
-  durationMinutes: z.number().int().min(1).max(600).optional().default(60),
-  questions: z
-    .string()
-    .refine((v) => {
-      try {
-        const parsed: unknown = JSON.parse(v);
-        if (!Array.isArray(parsed)) return false;
-        return parsed.every(
-          (item) =>
-            typeof item === "object" &&
-            item !== null &&
-            typeof (item as { question?: unknown }).question === "string" &&
-            ["multiple_choice", "true_false", "short_answer"].includes(
-              String((item as { type?: unknown }).type),
-            ),
-        );
-      } catch {
-        return false;
-      }
-    })
-    .optional()
-    .default("[]"),
-  subjectId: nullableId,
-});
-
-export const studyGroupSchema = z.object({
-  name: boundedTitle,
-  color: hexColor.optional().default("#8b5cf6"),
-  subjectId: nullableId,
-  members: z
-    .array(
-      z.object({
-        // AM1 (the s86 audit's L2): trim BEFORE the checks — a blank name
-        // must be REJECTED here, not persisted for the client seam to drop
-        // on read (the silent next-write deletion edge), and padded values
-        // are stored trimmed. This keeps the server boundary in agreement
-        // with normalizeMembers' blank-after-trim drop.
-        name: z.string().trim().min(1).max(100),
-        email: z.string().trim().email(),
-      }),
-    )
-    .max(50),
-});
-
-export const gradeSchema = z.object({
-  title: boundedTitle,
-  score: z.number().min(0).max(1000),
-  maxScore: z.number().min(1).max(1000).optional().default(100),
-  weight: z.number().min(0).max(100).optional().default(1),
-  subjectId: nullableId,
-});
-
-export const focusSessionSchema = z.object({
-  subjectId: nullableId,
-  startedAt: requiredDate,
-  durationSeconds: z.number().int().min(1).max(86_400),
-  mode: z.enum(["focus", "short-break", "long-break"]).optional().default("focus"),
-  completed: z.boolean().optional().default(true),
-});
-
-export const holidaySchema = z.object({
-  name: boundedTitle,
-  date: requiredDate,
-});
-
-// ---- AI + RUM + calculator ---------------------------------------------------
-
-export const aiChatSchema = z.object({
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(10_000),
-      }),
-    )
-    .min(1)
-    .max(40),
-  surface: z.enum(["assistant", "solver"]).optional().default("assistant"),
-});
-
-export const mathSolveSchema = z.object({
-  problem: z.string().min(1).max(4000),
-  image: z
-    .string()
-    .regex(/^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/)
-    .optional(),
-});
-
-export const rumEventSchema = z.object({
-  metric: z.enum(["TTFB", "FCP", "LCP", "CLS", "INP"]),
-  value: z.number().min(0),
-  rating: z.enum(["good", "needs-improvement", "poor"]),
-  navigationType: z.enum([
-    "navigate",
-    "reload",
-    "back-forward",
-    "back-forward-cache",
-    "prerender",
-    "restore",
-    "soft-navigation",
-  ]),
-  path: z.string().max(200).optional().default("/"),
-  userAgent: z.string().max(300).optional().default(""),
-});
-
-export const rumBatchSchema = z.object({
-  sessionId: z.string().min(1).max(100),
-  events: z.array(rumEventSchema).min(1).max(10),
-});
-
-export const calculatorHistorySchema = z.object({
-  expression: z.string().min(1).max(500),
-  result: z.string().min(1).max(500),
-  mode: z.enum(["basic", "scientific", "gpa", "unit"]).optional().default("basic"),
+  fullName: text(80, "El nombre"),
 });

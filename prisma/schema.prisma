@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// StudyFlow (Omni-Study) — Prisma schema (24 models)
+// VeloxPOS — Prisma schema (9 models)
 //
 // DATABASE PATH CONTRACT (pinned by tests/db-path.test.ts — read .env.example):
 //   DATABASE_URL="file:../db/custom.db" must resolve to <repo>/db/custom.db
@@ -8,10 +8,16 @@
 //   (shell-provided → schema-anchored); never rely on repo-root .env
 //   auto-loading with the raw CLI.
 //
-// Relations: every user-owned model carries `userId` with onDelete: Cascade
-// (Flashcard is the documented exception — scoped through its deck, S7).
-// Nullable subject/list/notebook/folder references use SetNull.
+// MONEY CONTRACT: every monetary amount is an INTEGER amount of cents
+// (price, cost, floats, totals — "Precio de venta" 38.50 is stored as 3850).
+// Tax rates are integer basis points of percent ×100 (16% → 1600) so the
+// math stays exact. Formatting/rounding lives ONLY in src/lib/money.ts.
+//
+// Relations: every user-owned model carries `userId` with onDelete: Cascade.
+// Optional references (category, cashier, register, shift, product) use
+// SetNull — history rows (Sale/SaleItem/Shift) survive master-data deletes.
 // ---------------------------------------------------------------------------
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -22,46 +28,24 @@ datasource db {
 }
 
 model User {
-  id                   String   @id @default(cuid())
-  email                String   @unique
-  passwordHash         String
-  fullName             String   @default("")
-  // Preferences (theme system — see src/lib/theme.ts; persisted via
-  // PATCH /api/settings/preferences)
-  themeMode            String   @default("system") // light | dark | system
-  accentColor          String   @default("violet")
-  avatarEmoji          String   @default("") // "" = initial-letter default state
-  notificationsEnabled Boolean  @default(true)
-  // S17 study profile (the reference's own Profile tab fields)
-  schoolName           String   @default("")
-  gradeLevel           String   @default("")
-  studyGoalHours       Int      @default(4) // 1–12
-  // S15 auth flows: registration creates an UNVERIFIED account
-  emailVerified        Boolean  @default(false)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  fullName      String   @default("")
+  // S15 auth flows: registration creates an UNVERIFIED account; the 6-digit
+  // code rides the register response (self-hosted, no SMTP).
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  subjects            Subject[]
-  taskLists           TaskList[]
-  tasks               Task[]
-  assignments         Assignment[]
-  exams               Exam[]
-  events              Event[]
-  timetableClasses    TimetableClass[]
-  notebooks           Notebook[]
-  notes               Note[]
-  flashcardDecks      FlashcardDeck[]
-  practiceTests       PracticeTest[]
-  studyGroups         StudyGroup[]
-  grades              Grade[]
-  focusSessions       FocusSession[]
-  fileFolders         FileFolder[]
-  fileItems           FileItem[]
-  aiChatMessages      AiChatMessage[]
-  calculatorHistory   CalculatorHistoryEntry[]
-  holidays            Holiday[]
-  rumEvents           RumEvent[]
-  verificationTokens  VerificationToken[]
+  categories         Category[]
+  products           Product[]
+  cashRegisters      CashRegister[]
+  cashiers           Cashier[]
+  shifts             Shift[]
+  sales              Sale[]
+  storeSettings      StoreSettings?
+  verificationTokens VerificationToken[]
   passwordResetTokens PasswordResetToken[]
 }
 
@@ -82,360 +66,166 @@ model PasswordResetToken {
   token     String    @unique // 48-hex one-shot
   expiresAt DateTime // 30-minute window
   usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime   @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
-model Subject {
+model Category {
   id        String   @id @default(cuid())
   userId    String
-  name      String
-  color     String   @default("#8b5cf6")
+  name      String // 1..60, unique per user
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products  Product[]
 
-  tasks          Task[]
-  assignments    Assignment[]
-  exams          Exam[]
-  timetableClass TimetableClass[]
-  flashcardDecks FlashcardDeck[]
-  practiceTests  PracticeTest[]
-  studyGroups    StudyGroup[]
-  grades         Grade[]
-  focusSessions  FocusSession[]
-  notes          Note[]
-
+  @@unique([userId, name])
   @@index([userId])
 }
 
-model TaskList {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tasks     Task[]
-
-  @@index([userId])
-}
-
-model Task {
-  id        String    @id @default(cuid())
-  userId    String
-  title     String // 1..200
-  notes     String    @default("")
-  listId    String?
-  subjectId String?
-  completed Boolean   @default(false)
-  important Boolean   @default(false)
-  dueDate   DateTime?
-  // S6-B reference dialog fields
-  priority  String    @default("none") // none | low | medium | high
-  repeat    String    @default("none") // none | daily | weekly | monthly
-  myDay     Boolean   @default(false)
-  subtasks  String    @default("[]") // JSON [{id,title,done}]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  list      TaskList? @relation(fields: [listId], references: [id], onDelete: SetNull)
-  subject   Subject?  @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-  @@index([listId])
-}
-
-model Assignment {
-  id          String    @id @default(cuid())
-  userId      String
-  title       String // 1..200
-  description String    @default("")
-  subjectId   String?
-  dueDate     DateTime?
-  // S6-E reference row fields
-  type        String    @default("homework") // homework | essay | project | reading | lab | presentation | other
-  progress    Int       @default(0) // 0..100
-  priority    String    @default("medium") // low | medium | high | urgent
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject     Subject?  @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-}
-
-model Exam {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String // 1..200
-  date      DateTime
-  subjectId String?
-  // S6-F reference card fields
-  type      String   @default("test") // test | quiz | midterm | final | oral | practical
-  duration  Int      @default(60) // minutes (5..6000)
-  topics    String   @default("[]") // JSON string array
-  // S76/AC5 (measured on the reference): the 📍 card row + the dialog's
-  // Location input — nullable string, empty when unset.
-  location  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-}
-
-model Event {
-  id        String    @id @default(cuid())
-  userId    String
-  title     String // 1..200
-  startDate DateTime
-  endDate   DateTime?
-  allDay    Boolean   @default(false)
-  color     String    @default("#8b5cf6")
-  // S5-B2 reference dialog fields
-  location  String    @default("")
-  repeat    String    @default("none") // none | daily | weekly | monthly
-  description String  @default("")
-  reminders String    @default("[]") // JSON [minutesBefore]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model TimetableClass {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  dayOfWeek Int // 0=Monday … 6=Sunday (ISO minus one)
-  startTime String // "9:00"
-  endTime   String
-  subjectId String?
-  room      String   @default("")
-  weekType  String   @default("ALL") // ALL | A | B (S5-J)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-}
-
-model Notebook {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notes     Note[]
-
-  @@index([userId])
-}
-
-model Note {
+model Product {
   id         String    @id @default(cuid())
   userId     String
-  title      String // 1..200
-  content    String    @default("")
-  tags      String    @default("[]") // JSON tag array
-  notebookId String?
-  subjectId  String?
+  categoryId String?
+  name       String // 1..120
+  barcode    String // unique per user, 1..64
+  priceCents Int // sale price ≥ 0
+  costCents  Int? // acquisition cost, optional
+  stock      Int       @default(0) // ≥ 0
+  minStock   Int       @default(5) // low-stock threshold
+  taxRate    Int       @default(1600) // basis points of percent (16% → 1600)
+  unit       String    @default("Pieza") // Pieza | Kilogramo | Litro | Paquete
+  imageUrl   String? // data URL ≤ ~1.5 MB
+  active     Boolean   @default(true)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notebook   Notebook? @relation(fields: [notebookId], references: [id], onDelete: SetNull)
-  subject    Subject?  @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  saleItems  SaleItem[]
 
+  @@unique([userId, barcode])
   @@index([userId])
-  @@index([notebookId])
+  @@index([categoryId])
 }
 
-model FlashcardDeck {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String   @default("")
-  color       String   @default("#8b5cf6")
-  subjectId   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject     Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  cards       Flashcard[]
-
-  @@index([userId])
-}
-
-// S7 nesting: Flashcard carries NO userId — ownership scopes through its deck.
-model Flashcard {
-  id         String        @id @default(cuid())
-  deckId     String
-  front      String
-  back       String
-  difficulty String        @default("medium") // easy | medium | hard
-  mastered   Boolean       @default(false)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  deck       FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
-
-  @@index([deckId])
-}
-
-model PracticeTest {
-  id              String   @id @default(cuid())
-  userId          String
-  title           String // 1..200
-  durationMinutes Int      @default(60)
-  questions       String   @default("[]") // JSON [{question,type}]
-  subjectId       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject         Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-}
-
-model StudyGroup {
+model CashRegister {
   id        String   @id @default(cuid())
   userId    String
-  name      String
-  color     String   @default("#8b5cf6")
-  subjectId String?
-  // JSON string of [{name,email}] — validated as an array at the boundary,
-  // serialized by the route (members capped at 50).
-  members   String   @default("[]")
+  name      String // 1..60, unique per user
+  location  String   @default("")
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  shifts    Shift[]
+  sales     Sale[]
 
+  @@unique([userId, name])
   @@index([userId])
 }
 
-model Grade {
+model Cashier {
   id        String   @id @default(cuid())
   userId    String
-  title     String
-  score     Float
-  maxScore  Float    @default(100)
-  weight    Float    @default(1) // credit weight
-  subjectId String?
+  name      String // 1..80
+  email     String   @default("")
+  phone     String   @default("")
+  pin       String   @default("") // optional 4-6 digit terminal PIN (hashed at the seam)
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  shifts    Shift[]
+  sales     Sale[]
 
   @@index([userId])
 }
 
-model FocusSession {
-  id              String   @id @default(cuid())
-  userId          String
-  subjectId       String?
-  startedAt       DateTime
-  durationSeconds Int
-  mode            String   @default("focus") // focus | short-break | long-break
-  completed       Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject         Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-}
-
-model FileFolder {
-  id        String       @id @default(cuid())
-  userId    String
-  name      String
-  parentId  String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent    FileFolder?  @relation("FolderNesting", fields: [parentId], references: [id], onDelete: SetNull)
-  children  FileFolder[] @relation("FolderNesting")
-  items     FileItem[]
-
-  @@index([userId])
-}
-
-model FileItem {
-  id        String      @id @default(cuid())
-  userId    String
-  name      String
-  mime      String
-  size      Int
-  data      String? // base64 ≤ 2 MiB; null + url for link-files
-  url       String?
-  folderId  String?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folder    FileFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-  @@index([folderId])
-}
-
-model AiChatMessage {
-  id        String   @id @default(cuid())
-  userId    String
-  role      String // user | assistant
-  content   String
-  surface   String   @default("assistant") // assistant | solver
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model CalculatorHistoryEntry {
-  id         String   @id @default(cuid())
-  userId     String
-  expression String
-  result     String
-  mode       String   @default("basic") // basic | scientific | gpa | unit
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model Holiday {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  date      DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model RumEvent {
-  id             String   @id @default(cuid())
+model Shift {
+  id             String       @id @default(cuid())
   userId         String
-  sessionId      String
-  metric         String // TTFB | FCP | LCP | CLS | INP
-  value          Float
-  rating         String // good | needs-improvement | poor
-  navigationType String
-  path           String   @default("/")
-  userAgent      String   @default("")
-  createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registerId     String
+  cashierId      String
+  openedAt       DateTime     @default(now())
+  closedAt       DateTime?
+  openingFloatCents Int       @default(0) // fondo de caja inicial ≥ 0
+  closingAmountCents Int?
+  expectedAmountCents Int?    // float + sales at close time
+  differenceCents Int?
+  status         String       @default("open") // open | closed
+  notes          String       @default("")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  register       CashRegister @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  cashier        Cashier      @relation(fields: [cashierId], references: [id], onDelete: Cascade)
+  sales          Sale[]
 
-  // S18: the beacon UPSERTS on this pair — final value wins.
-  @@unique([sessionId, metric])
   @@index([userId])
+  @@index([registerId, status])
+  @@index([cashierId])
+}
+
+model Sale {
+  id            String   @id @default(cuid())
+  userId        String
+  ticketNumber  String   @unique // "V-XXXXXXXX"
+  cashierId     String?
+  registerId    String?
+  shiftId       String?
+  customerName  String   @default("")
+  paymentMethod String   @default("cash") // cash | card | transfer
+  subtotalCents Int
+  taxCents      Int
+  totalCents    Int
+  status        String   @default("completed") // completed | refunded
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cashier       Cashier?    @relation(fields: [cashierId], references: [id], onDelete: SetNull)
+  register      CashRegister? @relation(fields: [registerId], references: [id], onDelete: SetNull)
+  shift         Shift?      @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  items         SaleItem[]
+
+  @@index([userId])
+  @@index([shiftId])
+  @@index([createdAt])
+}
+
+// SaleItem carries NO userId — ownership scopes through its sale (S7 precedent).
+model SaleItem {
+  id          String   @id @default(cuid())
+  saleId      String
+  productId   String?
+  name        String // snapshot at sale time
+  unitPriceCents Int
+  quantity    Int // ≥ 1
+  taxRate     Int      @default(1600)
+  lineTotalCents Int // unitPrice × qty, tax-exclusive
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model StoreSettings {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  storeName      String   @default("Mi Tienda")
+  logoUrl        String? // data URL ≤ ~1.5 MB
+  address        String   @default("")
+  phone          String   @default("")
+  email          String   @default("")
+  taxId          String   @default("") // RFC / ID Fiscal
+  currency       String   @default("MXN")
+  primaryColor   String   @default("#6366f1")
+  secondaryColor String   @default("#8b5cf6")
+  ticketFooter   String   @default("¡Gracias por su compra! Vuelva pronto.")
+  cardProvider   String   @default("none") // none | terminal | link
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

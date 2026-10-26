@@ -1,38 +1,32 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
 /* ---------------------------------------------------------------------------
-   StudyFlow design system — Tailwind v4, CSS-first.
+   VeloxPOS design system — Tailwind v4, CSS-first, DARK-ONLY app.
 
-   THE TEN DOCUMENTED v3→v4 TRAPS (docs/Tailwind-V4-Validation-Report.md +
-   AGENTS.md) — every pin below exists because a trap shipped a parity bug:
+   The reference (veloxposretail.base44.app, measured live 2026-10-26) is a
+   dark POS surface with a light login page. Tokens below pin the measured
+   values; the login surface styles itself with explicit light utilities.
 
-   1.  @theme inline vars must be FULL hsl() colors — bare triplets resolve to
-       transparent. Shadcn tokens therefore stay raw triplets in :root/.dark,
-       consumed as hsl(var(--x)) INSIDE @theme inline (trap 13 routing).
-   2.  The v3-era palette is PINNED below — v4's oklch defaults drift 1–3
-       units/channel (trap: unpinned colors serialize as lab(...)).
-   3.  --shadow-sm is pinned to v3's exact value — v4 shifted the scale a notch.
+   THE DOCUMENTED v3→v4 TRAPS (docs/Tailwind-V4-Validation-Report.md) that
+   shaped this file:
+   1.  @theme vars must resolve at runtime — raw RGB triplets live in :root
+       and are consumed as rgb(var(--x)) inside @theme (a literal inlines at
+       build time and can never be re-themed by Ajustes' store colors).
+   2.  The v3-era palette is PINNED below — v4's oklch defaults drift
+       1–3 units/channel and unpinned classes serialize as lab().
+   3.  --shadow-sm pinned to v3's exact value (v4 shifted the scale a notch).
    4.  Never put margin utilities (mt-*, mb-*) as children of space-y/x-*
        containers — v4's :where() rewrite flips specificity. Convention:
-       flex gap-* only.
-   5.  Exact-sRGB gradients are inline styles / CSS classes, never utility
-       gradients (v4 interpolates in oklab).
-   6.  Radius scale: v4 is v3-identical EXCEPT rounded-sm (2px → xs). Pin
-       --radius-sm ONLY.
-   7.  Opacity utilities serialize as oklab in Chromium — e2e accepts both.
+       flex + gap-* only.
+   5.  Exact-sRGB gradients are inline styles / .pos-gradient-*, never
+       utility gradients (v4 interpolates in oklab).
+   6.  Radius scale: only rounded-sm changed meaning — pinned.
    8.  pt-* after p-* REPLACES the top — the mobile offset is a single pt-20.
    9.  BLUR scale shifted: v3 backdrop-blur-sm (4px) is v4 backdrop-blur-xs.
-   10. Modern color syntax serializes as legacy forms — pin asserted colors.
-
-   Dark-mode contract (S10-1): every token that must re-theme is a raw
-   triplet in :root/.dark routed through hsl(var(…)) in @theme inline — a
-   LITERAL there inlines at build time and .dark can never reach it.
 --------------------------------------------------------------------------- */
 
 @theme {
-  /* ---- v3-era palette pins (measured hexes; trap 2/10) ---- */
+  /* ---- pinned palette (measured hexes; trap 2) ---- */
   --color-slate-50: #f8fafc;
   --color-slate-100: #f1f5f9;
   --color-slate-200: #e2e8f0;
@@ -45,28 +39,9 @@
   --color-slate-900: #0f172a;
   --color-slate-950: #020617;
 
-  --color-zinc-50: #fafafa;
-  --color-zinc-100: #f4f4f5;
-  --color-zinc-200: #e4e4e7;
-  --color-zinc-300: #d4d4d8;
-  --color-zinc-400: #a1a1aa;
-  --color-zinc-500: #71717a;
-  --color-zinc-600: #52525b;
-  --color-zinc-700: #3f3f46;
-  --color-zinc-800: #27272a;
-  --color-zinc-900: #18181b;
-  --color-zinc-950: #09090b;
-  --color-gray-50: #f9fafb;
   --color-gray-100: #f3f4f6;
-  --color-gray-200: #e5e7eb;
-  --color-gray-300: #d1d5db;
   --color-gray-400: #9ca3af;
   --color-gray-500: #6b7280;
-  --color-gray-600: #4b5563;
-  --color-gray-700: #374151;
-  --color-gray-800: #1f2937;
-  --color-gray-900: #111827;
-  --color-gray-950: #030712;
 
   --color-violet-50: #f5f3ff;
   --color-violet-100: #ede9fe;
@@ -76,131 +51,65 @@
   --color-violet-500: #8b5cf6;
   --color-violet-600: #7c3aed;
   --color-violet-700: #6d28d9;
-  --color-violet-800: #5b21b6;
   --color-violet-900: #4c1d95;
 
   --color-indigo-50: #eef2ff;
   --color-indigo-100: #e0e7ff;
+  --color-indigo-300: #a5b4fc;
+  --color-indigo-400: #818cf8;
   --color-indigo-500: #6366f1;
   --color-indigo-600: #4f46e5;
   --color-indigo-700: #4338ca;
 
-  --color-blue-50: #eff6ff;
   --color-blue-100: #dbeafe;
-  --color-blue-300: #93c5fd; /* S92/AS1: the assignments dark blue due pill — trap 2/10 (was unpinned) */
   --color-blue-400: #60a5fa;
   --color-blue-500: #3b82f6;
   --color-blue-600: #2563eb;
-  --color-blue-950: #172554; /* S92/AS1: the assignments dark blue due pill — trap 2/10 (was unpinned) */
-
-  --color-sky-50: #f0f9ff;
-  --color-sky-100: #e0f2fe;
-  --color-sky-300: #7dd3fc; /* S80/AG4: the GradeTracker dark sky pill (trap 10 — pin asserted colors) */
-  --color-sky-400: #38bdf8;
-  --color-sky-500: #0ea5e9;
-  --color-sky-600: #0284c7;
-  --color-sky-700: #0369a1;
-  --color-sky-950: #082f49; /* S80/AG4 */
-
-  --color-cyan-50: #ecfeff;
-  --color-cyan-100: #cffafe;
-  --color-cyan-400: #22d3ee;
-  --color-cyan-500: #06b6d4;
-  --color-cyan-600: #0891b2;
-  --color-cyan-700: #0e7490;
-
-  --color-teal-50: #f0fdfa;
-  --color-teal-100: #ccfbf1;
-  --color-teal-300: #5eead4;
-  --color-teal-400: #2dd4bf;
-  --color-teal-500: #14b8a6;
-  --color-teal-600: #0d9488;
-  --color-teal-700: #0f766e;
-  --color-teal-900: #134e4a;
 
   --color-emerald-50: #ecfdf5;
   --color-emerald-100: #d1fae5;
-  --color-emerald-200: #a7f3d0; /* S81/AH3: the success toast's dark text — trap 10 */
-  --color-emerald-300: #6ee7b7;
   --color-emerald-400: #34d399;
   --color-emerald-500: #10b981;
   --color-emerald-600: #059669;
   --color-emerald-700: #047857;
   --color-emerald-900: #064e3b;
-  --color-emerald-950: #022c22; /* S80/AG4: the dark score pill — trap 10 */
 
-  /* green-100 is the reference's measured FOCUS TIME tint — #dcfce7, NOT
-     emerald-100 (S7 trap 12: same-hue families are not interchangeable). */
   --color-green-100: #dcfce7;
   --color-green-500: #22c55e;
   --color-green-600: #16a34a;
+  --color-green-700: #15803d;
 
-  --color-amber-50: #fffbeb;
   --color-amber-100: #fef3c7;
-  --color-amber-200: #fde68a; /* S94/AU1 (was unpinned) — trap 10: the connectivity banner's light border / dark ink */
-  --color-amber-300: #fcd34d;
   --color-amber-400: #fbbf24;
   --color-amber-500: #f59e0b;
   --color-amber-600: #d97706;
-  --color-amber-700: #b45309;
-  --color-amber-800: #92400e; /* S94/AU1 (was unpinned) — the banner's light ink / the dark border's base */
-  --color-amber-900: #78350f;
-  --color-amber-950: #451a03; /* S80/AG4 */
 
-  --color-orange-50: #fff7ed;
   --color-orange-100: #ffedd5;
-  --color-orange-300: #fdba74; /* S92/AS1: the exams Tomorrow dark badge — trap 2/10 (was unpinned) */
   --color-orange-400: #fb923c;
   --color-orange-500: #f97316;
   --color-orange-600: #ea580c;
-  --color-orange-700: #c2410c;
-  --color-orange-950: #431407; /* S92/AS1: the exams Tomorrow dark badge — trap 2/10 (was unpinned) */
 
   --color-red-50: #fef2f2;
   --color-red-100: #fee2e2;
-  --color-red-200: #fecaca;
-  --color-red-300: #fca5a5;
   --color-red-400: #f87171;
   --color-red-500: #ef4444;
   --color-red-600: #dc2626;
   --color-red-700: #b91c1c;
-  --color-red-900: #7f1d1d;
-  --color-red-950: #450a0a; /* S80/AG3: the dark AC key — trap 10 (the house dark-pill family renders the stable v3 hex now) */
 
-  --color-pink-50: #fdf2f8;
-  --color-pink-100: #fce7f3;
-  --color-pink-300: #f9a8d4;
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+
+  --color-teal-400: #2dd4bf;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+
+  --color-purple-300: #d8b4fe;
+  --color-purple-400: #c084fc;
+  --color-purple-500: #a855f7;
+  --color-purple-600: #9333ea;
+
   --color-pink-400: #f472b6;
   --color-pink-500: #ec4899;
-  --color-pink-600: #db2777;
-  --color-pink-700: #be185d;
-  --color-pink-900: #831843;
-
-  --color-rose-50: #fff1f2;
-  --color-rose-100: #ffe4e6;
-  --color-rose-500: #f43f5e;
-  --color-rose-600: #e11d48;
-  --color-rose-700: #be123c;
-
-  --color-yellow-50: #fefce8;
-  --color-yellow-100: #fef9c3;
-  --color-yellow-300: #fde047; /* S92/AS1: the exams/flashcards/assignments dark yellow pills — trap 2/10 (was unpinned) */
-  --color-yellow-500: #eab308;
-  --color-yellow-700: #a16207;
-  --color-yellow-950: #422006;
-
-  /* S76/AC6: the exam topics chips — the neutral family (measured
-   * bg #262626 / text #fafafa on the reference); unpinned these read
-   * back as lab() (trap 10). S77/AD: neutral-950 joins for the study-
-   * mode Exit/Wrong/Divider black buttons (measured rgb(10,10,10)). */
-  --color-neutral-50: #fafafa;
-  --color-neutral-100: #f5f5f5;
-  --color-neutral-700: #404040;
-  --color-neutral-800: #262626;
-  --color-neutral-950: #0a0a0a;
-
-  --color-purple-100: #f3e8ff;
-  --color-purple-500: #a855f7;
 
   /* ---- trap 3: v3's shadow-sm — v4 shifted the whole scale one notch ---- */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -229,91 +138,53 @@
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
 
-  /* The sf-primary color utilities defined in @theme (the only ones —
-     everything else reads the runtime vars via rgb(var(--sf-*))): */
-  --color-sf-primary: rgb(var(--sf-primary));
-  --color-sf-primary-foreground: rgb(var(--sf-primary-foreground));
-  --color-sf-primary-soft: rgb(var(--sf-primary-soft));
-  --color-sf-primary-soft-dark: rgb(var(--sf-primary-soft-dark));
-  --color-sf-primary-strong: rgb(var(--sf-primary-strong));
-  --color-sf-primary-strong-dark: rgb(var(--sf-primary-strong-dark));
+  /* The POS primary utilities (runtime-overridable via Ajustes' colors):
+     rgb(var(--pos-*)) — the triplets live in :root below. */
+  --color-sf-primary: rgb(var(--pos-primary));
+  --color-sf-primary-foreground: rgb(var(--pos-primary-foreground));
+  --color-sf-primary-strong: rgb(var(--pos-primary-strong));
+  --color-sf-primary-soft: rgb(var(--pos-primary-soft));
 }
 
 /* ---------------------------------------------------------------------------
-   Raw triplet tokens (:root / .dark) — consumed through hsl(var(--x)) inside
-   @theme inline above, so .dark overrides actually reach the utilities
-   (trap 13: a literal in @theme inline inlines at build time).
+   Raw triplet tokens — consumed through hsl(var(--x)) / rgb(var(--pos-*))
+   inside @theme above (trap 1 routing). The shell overwrites --pos-primary /
+   --pos-gradient-to at runtime when Ajustes changes the store colors.
 --------------------------------------------------------------------------- */
 :root {
-  /* the violet accent's runtime defaults (pre-apply state; the theme store
-     and the boot script overwrite the --sf-* set on <html>) */
-  --sf-primary: 139 92 246;
-  --sf-primary-foreground: 255 255 255;
-  --sf-primary-strong: 124 58 237;
-  --sf-primary-strong-dark: 196 181 253;
-  --sf-primary-deep: 109 40 217;
-  --sf-primary-soft: 243 232 255;
-  --sf-primary-soft-dark: 76 29 149;
-  --sf-primary-softest: 245 243 255;
-  --sf-primary-softest-adjacent: 238 242 255;
-  --sf-primary-empty: 237 233 254;
-  --sf-primary-gradient-to: 79 70 229;
-  --sf-primary-gradient-to-strong: 67 56 202;
-  --sf-primary-avatar-from: 167 139 250;
-  --sf-primary-avatar-to: 99 102 241;
-  --sf-primary-clock-date-dark: 167 139 250; /* S88/AO5 — the dedicated dark clock-date text token (same 400-step value; the computed colors are byte-identical) */
-  --sf-primary-empty-from: 237 233 254;
-  --sf-primary-empty-to: 224 231 255;
+  /* The reference's defaults (Ajustes): #6366f1 primary, #8b5cf6 secondary. */
+  --pos-primary: 99 102 241;
+  --pos-primary-foreground: 255 255 255;
+  --pos-primary-strong: 79 70 229;
+  --pos-primary-soft: 49 46 129;
+  --pos-gradient-to: 139 92 246;
 
-  /* shadcn base — the reference's form-control palette is GRAY (S5) */
-  --background: 0 0% 100%;
-  --foreground: 220 9% 4%; /* gray-950 */
-  --card: 0 0% 100%;
-  --card-foreground: 220 9% 4%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 220 9% 4%;
-  --primary: 251 91% 60%; /* violet-500 in hsl */
+  /* shadcn tokens — the app's single (dark) theme. Measured surfaces:
+     background #080a14, card #0e111f, border #1e2235, text #e7e9ef. */
+  --background: 230 43% 5.5%;
+  --foreground: 222 26% 92%;
+  --card: 229 38% 8.8%;
+  --card-foreground: 222 26% 92%;
+  --popover: 228 32% 10%;
+  --popover-foreground: 222 26% 92%;
+  --primary: 239 84% 67%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 96%; /* slate-100 */
-  --secondary-foreground: 215 25% 27%; /* slate-700 */
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 9% 46%; /* gray-400 */
-  --accent: 220 14% 96%;
-  --accent-foreground: 215 25% 27%;
-  --destructive: 0 84% 60%;
+  --secondary: 231 28% 16%;
+  --secondary-foreground: 222 26% 92%;
+  --muted: 231 28% 16%;
+  --muted-foreground: 227 22% 64%;
+  --accent: 231 28% 16%;
+  --accent-foreground: 222 26% 92%;
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 13% 91%; /* gray-200 */
-  --input: 220 13% 91%;
-  --ring: 251 91% 60%;
+  --border: 231 28% 16%;
+  --input: 231 28% 16%;
+  --ring: 239 84% 67%;
   --radius: 0.5rem;
 }
 
-.dark {
-  /* shadcn-zinc family (S10-1 pins) — card 5.92%, popover/background 3.92%,
-     border+input 15.9%, foreground 98%. Primary stays the violet accent. */
-  --background: 240 10% 3.92%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 5.92%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.92%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 251 91% 60%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 251 91% 60%;
-}
-
 /* ---------------------------------------------------------------------------
-   Base + utilities
+   Base
 --------------------------------------------------------------------------- */
 @layer base {
   * {
@@ -325,626 +196,101 @@
       "Segoe UI Emoji";
   }
   body {
-    background-color: transparent;
+    background-color: rgb(8 10 20);
     color: hsl(var(--foreground));
   }
+  /* The drawer/dropdown scrollbars stay subtle on the dark canvas. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(30 34 53);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
-@utility sf-canvas {
-  /* trap 5: exact sRGB stops, never bg-gradient-to-* */
+/* ---------------------------------------------------------------------------
+   Custom utilities — @utility only (trap: @layer utilities loses the
+   cascade to generated utilities).
+--------------------------------------------------------------------------- */
+
+/* The exact-sRGB primary gradient (trap 5): #6366f1 → the store's secondary
+   (default #8b5cf6) — measured off the reference's Nuevo Producto button. */
+@utility pos-gradient {
   background-image: linear-gradient(
-    to right bottom,
-    #f8fafc,
-    #ffffff,
-    rgb(245 243 255 / 0.3)
+    90deg,
+    rgb(var(--pos-primary)),
+    rgb(var(--pos-gradient-to))
   );
-  .dark & {
-    background-image: linear-gradient(
-      to right bottom,
-      hsl(222 47% 6%),
-      hsl(222 47% 4%),
-      rgb(76 29 149 / 0.12)
-    );
-  }
 }
 
-@utility glass {
-  background-color: rgb(255 255 255 / 0.8);
-  backdrop-filter: blur(20px);
-  border-color: rgb(255 255 255 / 0.5);
-  .dark & {
-    background-color: rgb(15 23 42 / 0.8);
-    border-color: rgb(51 65 85 / 0.5);
-  }
+/* The emerald charge gradient (COBRAR / Abrir Turno): 135° #059669 → #10b981,
+   measured computed linear-gradient(135deg, rgb(5,150,105), rgb(16,185,129)). */
+@utility pos-gradient-success {
+  background-image: linear-gradient(135deg, #059669, #10b981);
 }
 
-@utility sf-card {
-  background-color: hsl(var(--card));
-  border: 1px solid #e2e8f0;
+/* The dark elevated card: #0e111f (≈ rgba(16,18,32,.9) measured) + the
+   reference's 0 8px 32px rgba(0,0,0,.5) glow. */
+@utility pos-card {
+  background-color: rgba(16, 18, 32, 0.9);
+  border: 1px solid rgb(30 34 53);
   border-radius: 1rem;
-  box-shadow: var(--shadow-sm);
-  .dark & {
-    border-color: hsl(var(--border));
-  }
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.5);
 }
 
-@utility sf-focus {
-  &:focus-visible {
-    outline: 2px solid rgb(var(--sf-primary));
-    outline-offset: 2px;
-  }
+/* Register-card variant with the reference's white top border. */
+@utility pos-card-register {
+  background-color: rgb(14 17 31);
+  border: 1px solid rgb(30 34 53);
+  border-top: 2px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.5);
 }
 
-@utility sf-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(203 213 225 / 0.9) transparent;
-  &::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background-color: rgb(203 213 225 / 0.9);
-    border-radius: 9999px;
-  }
-  .dark & {
-    scrollbar-color: rgb(51 65 85 / 0.9) transparent;
-    &::-webkit-scrollbar-thumb {
-      background-color: rgb(51 65 85 / 0.9);
-    }
-  }
-}
-
-@utility sf-skeleton {
-  position: relative;
-  overflow: hidden;
-  background-color: hsl(var(--muted));
-  &::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      rgb(255 255 255 / 0.45),
-      transparent
-    );
-    animation: sf-shimmer 1.6s infinite;
-  }
-  .dark &::after {
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      rgb(255 255 255 / 0.08),
-      transparent
-    );
-  }
-}
-
-@utility sf-gradient {
-  /* the session-5 gradient CTA surface — sRGB-exact via runtime vars */
-  background-image: linear-gradient(
-    to right,
-    rgb(var(--sf-primary)),
-    rgb(var(--sf-primary-gradient-to))
-  );
-  print-color-adjust: exact;
-  &:hover {
-    background-image: linear-gradient(
-      to right,
-      rgb(var(--sf-primary-strong)),
-      rgb(var(--sf-primary-gradient-to-strong))
-    );
-  }
-}
-
-@utility sf-gradient-shadow {
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1),
-    0 1px 2px -1px rgb(0 0 0 / 0.1);
-}
-
-@utility sf-gradient-shadow-lg {
-  box-shadow: 0 10px 15px -3px rgb(var(--sf-primary) / 0.25),
-    0 4px 6px -4px rgb(var(--sf-primary) / 0.25);
-}
-
-@utility sf-calc-display {
-  background-image: linear-gradient(
-    to bottom right,
-    rgb(var(--sf-primary-softest)),
-    rgb(var(--sf-primary-softest-adjacent))
-  );
-  .dark & {
-    background-image: linear-gradient(
-      to bottom right,
-      rgb(var(--sf-primary-soft-dark) / 0.35),
-      rgb(var(--sf-primary-soft-dark) / 0.2)
-    );
-  }
-}
-
-@utility sf-overdue-banner {
-  background-image: linear-gradient(to right, #fef2f2, #fff7ed);
-  border: 1px solid #fecaca;
-  .dark & {
-    background-image: linear-gradient(
-      to right,
-      rgb(127 29 29 / 0.2),
-      rgb(124 45 18 / 0.14)
-    );
-    border-color: rgb(127 29 29 / 0.6);
-  }
-}
-
-@utility sf-amber-cta {
-  background-image: linear-gradient(to bottom right, #f59e0b, #f97316);
-}
-
-@utility sf-amber-card {
-  background-image: linear-gradient(to bottom right, #fef3c7, #ffedd5);
-  .dark & {
-    background-image: linear-gradient(
-      to bottom right,
-      rgb(120 53 15 / 0.22),
-      rgb(124 45 18 / 0.16)
-    );
-  }
-}
-
-@utility sf-today-tint {
-  /* light: the violet-50 softest tint (S8-E header pin); dark: the raw rgb()
-     serializes as rgba(...) — the opacity-modifier utility form would emit
-     color-mix(in oklab) and break the rgb-serialization assertions. */
-  background-color: rgb(var(--sf-primary-softest));
-  .dark & {
-    background-color: rgb(var(--sf-primary-soft-dark) / 0.3);
-  }
-}
-
-@utility sf-aside-active {
-  /* S80/AG5: the Tasks aside's ACTIVE row — light keeps the exact
-     measured inline-style pair (softest fill + deep text, the S6-A pins);
-     dark re-themes to the sf-today-tint token pair (soft-dark at 30% +
-     strong-dark) because the clone's own dark nav active surfaces all
-     re-theme — the violet-50 light pill was the internal outlier and a
-     standing dark-sweep flashbulb. (The live ref KEEPS its violet-50
-     pill in dark — its own half-broken dark family; the clone's full
-     dark theme is the documented superset, the AF5 clock precedent.)
-     Replaces the inline style so the .dark & override can reach it —
-     inline styles beat any class specificity. */
-  background-color: rgb(var(--sf-primary-softest));
-  color: rgb(var(--sf-primary-deep));
-  .dark & {
-    background-color: rgb(var(--sf-primary-soft-dark) / 0.3);
-    color: rgb(var(--sf-primary-strong-dark));
-  }
-}
-
-/* ---- S92/AS1: the hue-consumer token families (the s80-era L4 standing
-   debt closed). The AG cycle pinned five dark-pill palette steps for ITS
-   five surfaces; 29 canonical consumer sites of the same hue families
-   (the census: 12 pill + 4 soft-pill + 13 alert; the dashboard priority
-   pill joined at s93, the RUM badges + the PT timer were the adjacent
-   closures) kept raw class strings — the pins re-themed them uniformly
-   with no observable diverges, but every new consumer had to re-derive
-   the family by hand (and three drifted: the RUM rating badges and the
-   PracticeTests timer pill carried NO dark branch, the timer pill rode
-   the WCAG-failing red-600-on-red-100 pair the DuePill's Lighthouse-61
-   lesson already
-   fixed once). The families now live here, referencing the pinned palette
-   vars (the @theme pin stays the single source — never a literal hex).
-   Color-only by design: layout, rounding and typography stay site-local.
-   The consumer census + this contract are machine-guarded by
-   tests/hue-tokens.test.ts (the AP3 source-scan precedent — computed-style
-   pins cannot discriminate a utility from the raw classes; that is the
-   point: byte-identical rendering, centralized family). */
-
-@utility sf-pill-red {
-  /* The 100-step status pill: shared DuePill, exams Today badge, GradeTracker
-     red score pill, assignments overdue pill, dashboard missed-exam badge,
-     calculator AC key, RUM poor badge, PracticeTests timer red branch. */
-  background-color: var(--color-red-100);
-  color: var(--color-red-700);
-  .dark & {
-    background-color: var(--color-red-950);
-    color: var(--color-red-300);
-  }
-}
-
-@utility sf-pill-orange {
-  /* The exams Tomorrow badge (S9-J pinned). */
-  background-color: var(--color-orange-100);
-  color: var(--color-orange-700);
-  .dark & {
-    background-color: var(--color-orange-950);
-    color: var(--color-orange-300);
-  }
-}
-
-@utility sf-pill-yellow {
-  /* The exams N-days (≥2 bucket) badge, the flashcards difficulty pill,
-     and the dashboard assignments priority pill (s93). */
-  background-color: var(--color-yellow-100);
-  color: var(--color-yellow-700);
-  .dark & {
-    background-color: var(--color-yellow-950);
-    color: var(--color-yellow-300);
-  }
-}
-
-@utility sf-pill-emerald {
-  /* The GradeTracker >=90 score pill + the RUM good badge. */
-  background-color: var(--color-emerald-100);
-  color: var(--color-emerald-700);
-  .dark & {
-    background-color: var(--color-emerald-950);
-    color: var(--color-emerald-300);
-  }
-}
-
-@utility sf-pill-sky {
-  /* The GradeTracker >=80 score pill (S80/AG4). */
-  background-color: var(--color-sky-100);
-  color: var(--color-sky-700);
-  .dark & {
-    background-color: var(--color-sky-950);
-    color: var(--color-sky-300);
-  }
-}
-
-@utility sf-pill-amber {
-  /* The GradeTracker >=70 score pill + the RUM needs-improvement badge. */
-  background-color: var(--color-amber-100);
-  color: var(--color-amber-700);
-  .dark & {
-    background-color: var(--color-amber-950);
-    color: var(--color-amber-300);
-  }
-}
-
-@utility sf-pill-soft-amber {
-  /* The assignments soft amber due pill (the S6 measured family). */
-  background-color: var(--color-amber-50);
-  color: var(--color-amber-700);
-  .dark & {
-    background-color: var(--color-amber-950);
-    color: var(--color-amber-300);
-  }
-}
-
-@utility sf-pill-soft-yellow {
-  /* The assignments soft yellow type pill (the S6 measured family). */
-  background-color: var(--color-yellow-50);
-  color: var(--color-yellow-700);
-  .dark & {
-    background-color: var(--color-yellow-950);
-    color: var(--color-yellow-300);
-  }
-}
-
-@utility sf-pill-soft-blue {
-  /* The assignments blue due pills — the reference's own measured
-     blue-50/blue-600 light pair (S6-A pinned; blue-600, not 700). */
-  background-color: var(--color-blue-50);
-  color: var(--color-blue-600);
-  .dark & {
-    background-color: var(--color-blue-950);
-    color: var(--color-blue-300);
-  }
-}
-
-@utility sf-alert-red {
-  /* The bordered destructive alert box: toast destructive variant, the
-     login/export/assignments/events/exams/flashcards/notes/timetable error
-     alerts. */
-  border: 1px solid var(--color-red-200);
-  background-color: var(--color-red-50);
-  color: var(--color-red-700);
-  .dark & {
-    border-color: var(--color-red-900);
-    background-color: var(--color-red-950);
-    color: var(--color-red-200);
-  }
-}
-
-@utility sf-alert-emerald {
-  /* The bordered success notice: the login surface's success banners, the
-     export panel's success note, the toast success variant. */
-  border: 1px solid var(--color-emerald-200);
-  background-color: var(--color-emerald-50);
-  color: var(--color-emerald-700);
-  .dark & {
-    border-color: var(--color-emerald-900);
-    background-color: var(--color-emerald-950);
-    color: var(--color-emerald-200);
-  }
-}
-
-@utility sf-connectivity-pill {
-  /* S94/AU1: the S14 offline banner's amber pill — the residual register's
-     first TREATED entry (the s93 register's own note: "update the register
-     if the site was treated"). The trap-10 closure's carrier: amber-200/
-     amber-800 were the last unpinned steps of the amber family, so the
-     banner's light border+ink and dark ink+border serialized through
-     v4-oklch and drifted 1–3 units/channel from the v3 hexes. The utility
-     exists because the pinned pair needs a home that references the @theme
-     vars (the single-source contract) and the alpha border needs the
-     raw-rgb() convention — site-local raw classes were the drift liability
-     itself. Color-only by design: the pill's layout (fixed bottom-center,
-     rounded-full, shadow) stays site-local. The dark border rides
-     rgb(146 64 14 / 0.6) so the alpha serializes as legacy rgba — never
-     color-mix(in oklab) — the sf-today-cell-tint precedent. */
-  border: 1px solid var(--color-amber-200);
-  background-color: var(--color-amber-100);
-  color: var(--color-amber-800);
-  .dark & {
-    border-color: rgb(146 64 14 / 0.6);
-    background-color: var(--color-amber-950);
-    color: var(--color-amber-200);
-  }
-}
-
-@utility sf-today-cell-tint {
-  /* The calendar cell's unselected-today fill — the reference's emptyFrom
-     (violet-100), one step deeper than the timetable header's softest tint
-     (S8-C vs S8-E pins). Shares sf-today-tint's raw-rgb dark branch so the
-     dark re-theme serializes as rgba(...), never color-mix(in oklab). */
-  background-color: rgb(var(--sf-primary-empty));
-  .dark & {
-    background-color: rgb(var(--sf-primary-soft-dark) / 0.3);
-  }
-}
-
-@utility sf-selected-tint {
-  /* a11y-superset: white text on violet-500 measured 4.23:1 (axe
-     color-contrast, serious) — one step darker to --sf-primary-strong
-     (violet-600, 5.70:1). The --sf-primary token itself is unchanged. */
-  background-color: rgb(var(--sf-primary-strong));
-  /* S83/AJ5 (the s83 print findings): this utility is the ACTIVE-state
-     fill for white-text surfaces (the Calendar segmented tabs, the
-     Timetable today badge, the Settings theme tile, the selected day) —
-     an essential background under the S12-C2 convention: it must PRINT
-     or its white text goes invisible on the forced white body. */
-  print-color-adjust: exact;
-  .dark & {
-    background-color: rgb(var(--sf-primary-soft-dark) / 0.3);
-  }
-}
-
-@utility sf-clock-chip {
-  background-image: linear-gradient(
-    to right bottom,
-    rgb(var(--sf-primary-softest)),
-    rgb(var(--sf-primary-softest-adjacent))
-  );
-  .dark & {
-    background-image: linear-gradient(
-      to bottom right,
-      rgb(var(--sf-primary-soft-dark) / 0.35),
-      rgb(var(--sf-primary-soft-dark) / 0.12)
-    );
-  }
-}
-
-@utility sf-clock-time {
-  color: rgb(var(--sf-primary-deep));
-  .dark & {
-    color: rgb(var(--sf-primary-strong-dark));
-  }
-}
-
-@utility sf-clock-date {
-  color: rgb(var(--sf-primary-strong));
-  .dark & {
-    /* S79/AF5 (the standing dark-sweep artifact, closed): the date read
-     * --sf-primary-soft-dark = violet-950 → 1.78:1 on the dark chip
-     * (unreadable on all 20 views). The theme system's own token comments
-     * name strong/strongDark as the clock-date pair; the 400 step
-     * keeps light's one-step hierarchy (the time's 300 is one step
-     * brighter than the date's 400, mirroring light's 700/600) at ~5.8:1
-     * on the dark chip — accent-aware. S88/AO5 (I2 closed): the text now
-     * reads its OWN dedicated token (--sf-primary-clock-date-dark, the
-     * same 400-step values) instead of borrowing the avatar gradient's
-     * start — retuning the avatar for aesthetics can no longer restyle
-     * the sidebar date on all 20 views. */
-    color: rgb(var(--sf-primary-clock-date-dark));
-  }
-}
-
-
-@utility sf-progress-card {
-  background-image: linear-gradient(to bottom right, #fffbeb, #fff7ed);
-  border: 1px solid #fef3c7;
-  .dark & {
-    background-image: linear-gradient(
-      to bottom right,
-      rgb(120 53 15 / 0.22),
-      rgb(124 45 18 / 0.16)
-    );
-    border-color: rgb(120 53 15 / 0.5);
-  }
-}
-
-
-@utility sf-timetable-canvas {
-  print-color-adjust: exact;
-}
-
-
-@utility sf-chip-dark {
-  .dark & {
-    background-color: rgb(var(--sf-primary-soft-dark) / 0.3);
-  }
-}
-
-/* S76/AC2+AC4 (measured on the reference): the subject chip — accent text
- * and dot on an 8% accent tint with a 19% accent border (the ref's own
- * inline rgba(139,92,246,…); accent-aware here through the runtime triplet
- * vars — the Standing-Lesson-2 raw-triplet pattern, never a /NN modifier).
- * Text rides --sf-primary-STRONG (violet-600): the ref's violet-500-on-tint
- * reads 3.9:1 and axe flags it (the a11y-win precedent — text goes one
- * step darker, exactly like the calendar's today fill); non-text elements
- * (the dot + border) keep the base accent. Dark mode brightens the tint
- * to 0.15 for legibility on dark cards. */
-@utility sf-subject-chip {
-  background-color: rgb(var(--sf-primary) / 0.08);
-  border: 1px solid rgb(var(--sf-primary) / 0.19);
-  color: rgb(var(--sf-primary-strong));
-
-  .dark & {
-    background-color: rgb(var(--sf-primary) / 0.15);
-    color: rgb(var(--sf-primary-strong-dark));
-  }
-}
-
-@utility sf-print-exact {
-  print-color-adjust: exact;
-}
-
-/* ---- S77/AD: the Quill note-editor surfaces (measured on the reference:
- * toolbar strip slate-50 pad 8px, editor pad 24px, 16px text; the white
- * rounded-2xl card + 1px slate-200 border ride the component classes).
- * Scoped under .sf-note-editor (the card wrapper) — Quill's own snow
- * stylesheet loads with the component chunk, so bare .ql-editor rules
- * lose the cascade; the prefix wins on specificity regardless of order.
- * Dark mode is the documented clone superset. ---- */
-.sf-note-editor .ql-toolbar.ql-snow {
-  background-color: #f8fafc; /* slate-50 (measured rgb(248,250,252)) */
-  padding: 8px;
-  border-bottom: 1px solid #e2e8f0;
-}
-.sf-note-editor .ql-editor {
-  padding: 24px; /* measured — the ref overrides Quill's default 12px 15px */
-  font-size: 16px;
-}
-.dark .sf-note-editor .ql-toolbar.ql-snow {
-  background-color: #1e293b; /* slate-800 */
-  border-bottom-color: #334155;
-}
-.dark .sf-note-editor .ql-editor {
-  color: #e2e8f0; /* slate-200 */
-}
-/* S78/AE3: snow pins the blank placeholder to rgba(0,0,0,.6) — ~1.07:1 on
- * the slate-900 editor (invisible). slate-400 keeps it a quiet hint that
- * actually reads in dark. */
-.dark .sf-note-editor .ql-editor.ql-blank::before {
-  color: #94a3b8; /* slate-400 */
-}
-.dark .sf-note-editor .ql-toolbar.ql-snow .ql-picker-label,
-.dark .sf-note-editor .ql-toolbar.ql-snow button {
-  color: #cbd5e1;
-}
-.dark .sf-note-editor .ql-toolbar.ql-snow .ql-stroke {
-  stroke: #cbd5e1;
-}
-.dark .sf-note-editor .ql-toolbar.ql-snow .ql-fill {
-  fill: #cbd5e1;
-}
-.dark .sf-note-editor .ql-snow .ql-picker.ql-expanded .ql-picker-label {
-  border-color: #334155;
-  color: #e2e8f0;
-}
-.dark .sf-note-editor .ql-snow .ql-picker-options {
-  background-color: #1e293b;
-  border-color: #334155;
-  color: #e2e8f0;
-}
-/* The Divider button's insert — a quiet rule (custom hr blot). */
-.sf-note-editor .ql-editor hr {
-  border: none;
-  border-top: 1px solid #e2e8f0;
-  margin: 12px 0;
-}
-.dark .sf-note-editor .ql-editor hr {
-  border-top-color: #334155;
-}
-/* The editor fills its card: toolbar strip + scrollable body. The wrapper
- * div IS the ql-container (Quill converts it) — flex-1 rides the component
- * className; this guarantees the scroll containment. */
-.sf-note-editor .ql-container {
-  min-height: 0;
-  overflow: auto;
-}
-
-@utility sf-skip-link {
+/* Keyboard-only skip link (a11y baseline). */
+@utility pos-skip-link {
   position: absolute;
   left: -9999px;
   top: 0;
   z-index: 100;
+  background: rgb(var(--pos-primary));
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
   &:focus {
-    left: 8px;
-    top: 8px;
-    padding: 8px 12px;
-    background-color: hsl(var(--card));
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+    left: 1rem;
+    top: 1rem;
   }
 }
 
-@keyframes sf-shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes sf-slide-in {
-  from {
-    transform: translateX(-16px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
+/* Drawer slide-in (the working mobile navigation). */
+@utility pos-slide-in {
+  animation: pos-slide-in 0.22s ease-out;
+  @keyframes pos-slide-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Forced-colors (Windows HC) state restoration (S12) — state must survive
-   without fills.
---------------------------------------------------------------------------- */
-@media (forced-colors: active) {
-  [aria-label="Calendar days"] [aria-pressed="true"],
-  [aria-label="Calendar mode"] [aria-pressed="true"],
-  [role="tab"][data-state="active"],
-  [data-today],
-  .sf-today-tint {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
-  }
-  nav a[aria-current="page"],
-  nav a[aria-current="page"] span {
-    font-weight: 700;
-  }
-  .sf-slider-fill {
-    forced-color-adjust: none;
-  }
+/* Toast alert surfaces (ui/toast.tsx): error red + success emerald on the
+   dark canvas — pinned v3-era hexes (trap 2/10). */
+@utility sf-alert-red {
+  border-color: #b91c1c;
+  background-color: #450a0a;
+  color: #fecaca;
 }
 
-/* ---------------------------------------------------------------------------
-   Reduced motion (S12) — the standard collapse block.
---------------------------------------------------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-@media print {
-  aside {
-    display: none !important;
-  }
-  body {
-    background-color: #ffffff !important;
-  }
-  .sf-timetable-canvas {
-    min-width: 0px !important;
-    overflow-x: visible !important;
-  }
+@utility sf-alert-emerald {
+  border-color: #047857;
+  background-color: #022c22;
+  color: #a7f3d0;
 }

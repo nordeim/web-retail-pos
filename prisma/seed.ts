@@ -1,249 +1,217 @@
 // ---------------------------------------------------------------------------
-// StudyFlow seed — idempotent demo data.
+// VeloxPOS seed — the reference store's own data, captured live 2026-10-26:
+// 6 categories, 12 products (name/barcode/price/stock verbatim), 2 cajas,
+// the reference's 2 completed sales (Coca-Cola + mixed ticket, Cesar
+// Martínez on Caja 1) and a matching closed-shift history.
 //
-// Contract (AGENTS.md / omni-study_SKILL.md §7): early-returns when the demo
-// user already exists. Changing seed VALUES requires deleting the target db
-// (db/custom.db or db/e2e.db) first — the upsert will not refresh them.
-// Run via `bun run db:seed` (the script sets DATABASE_URL inline, schema-
-// anchored; this file resolves the same env var through src/lib/db.ts).
+// Money: cents. IVA: 16% = 1600 basis points.
+// Run: DATABASE_URL="file:../db/custom.db" bun prisma/seed.ts
+// (the db:seed npm script pins the env var inline — schema-anchored).
 // ---------------------------------------------------------------------------
+
+import { PrismaClient } from "@prisma/client";
+
 import { hashPassword } from "../src/lib/auth";
-import { db } from "../src/lib/db";
 
-const DEMO_EMAIL = "demo@studyflow.app";
-const DEMO_PASSWORD = "Demo1234!";
+const db = new PrismaClient();
 
-function at(dayOffset: number, hour = 9, minute = 0): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + dayOffset);
-  d.setHours(hour, minute, 0, 0);
-  return d;
+const DEMO_EMAIL = "demo@veloxpos.mx";
+const DEMO_PASSWORD = "Demo1234";
+
+// The reference's inventory (measured live — do not "improve" the data).
+const CATEGORIES = [
+  "Snacks",
+  "Lácteos",
+  "Higiene Personal",
+  "Limpieza",
+  "Alimentos",
+  "Bebidas",
+] as const;
+
+const PRODUCTS: {
+  name: string;
+  barcode: string;
+  price: number; // pesos
+  stock: number;
+  category: (typeof CATEGORIES)[number];
+  minStock?: number;
+}[] = [
+  { name: "Yogurt Danone Natural 900g", barcode: "7501005102148", price: 38.5, stock: 10, category: "Lácteos" },
+  { name: "Frijoles La Costeña 560g", barcode: "7501017006113", price: 22.5, stock: 30, category: "Alimentos" },
+  { name: "Leche Lala Entera 1L", barcode: "7501055301114", price: 26.5, stock: 24, category: "Lácteos" },
+  { name: "Shampoo Pantene 400ml", barcode: "7501001165599", price: 89.0, stock: 12, category: "Higiene Personal" },
+  { name: "Cloro Cloralex 1L", barcode: "7501025400117", price: 24.0, stock: 22, category: "Limpieza" },
+  { name: "Papel Higiénico Pétalo 4 rollos", barcode: "7501019600012", price: 35.0, stock: 17, category: "Higiene Personal" },
+  { name: "Sabritas Original 45g", barcode: "7501011115019", price: 16.0, stock: 35, category: "Snacks" },
+  { name: "Agua Bonafont 1L", barcode: "7501013100018", price: 12.0, stock: 60, category: "Bebidas" },
+  { name: "Coca-Cola 600ml", barcode: "7501055300120", price: 18.5, stock: 47, category: "Bebidas" },
+  { name: "Atún Dolores 295g", barcode: "7501024520148", price: 32.0, stock: 3, category: "Alimentos", minStock: 5 },
+  { name: "Pan Bimbo Blanco", barcode: "7441029500103", price: 52.0, stock: 15, category: "Alimentos" },
+  { name: "Jabón Zote 400g", barcode: "7501025403010", price: 18.0, stock: 19, category: "Limpieza" },
+];
+
+const TAX_RATE = 1600;
+
+function taxOf(subtotalCents: number): number {
+  return Math.floor((subtotalCents * TAX_RATE) / 10000 + 0.5);
 }
 
-async function main(): Promise<void> {
-  const existing = await db.user.findUnique({ where: { email: DEMO_EMAIL } });
-  if (existing) {
-    console.log(`Seed: demo user already exists (${DEMO_EMAIL}) — nothing to do.`);
-    return;
-  }
-
-  const user = await db.user.create({
-    data: {
+async function main() {
+  const passwordHash = hashPassword(DEMO_PASSWORD);
+  const user = await db.user.upsert({
+    where: { email: DEMO_EMAIL },
+    update: { passwordHash, emailVerified: true },
+    create: {
       email: DEMO_EMAIL,
-      passwordHash: hashPassword(DEMO_PASSWORD),
-      fullName: "Demo Student",
-      themeMode: "light",
-      accentColor: "violet",
-      avatarEmoji: "", // reference default state — initial-letter avatar
+      passwordHash,
+      fullName: "Dueño de la Tienda",
       emailVerified: true,
-      schoolName: "Lincoln High",
-      gradeLevel: "9th Grade",
-      studyGoalHours: 4,
     },
   });
+  const userId = user.id;
 
-  const subjects = await Promise.all(
-    [
-      { name: "Mathematics", color: "#8b5cf6" },
-      { name: "Physics", color: "#3b82f6" },
-      { name: "Chemistry", color: "#10b981" },
-      { name: "History", color: "#f59e0b" },
-      { name: "English", color: "#ec4899" },
-      { name: "Biology", color: "#ef4444" },
-    ].map((s) => db.subject.create({ data: { ...s, userId: user.id } })),
-  );
-  const [math, physics, chemistry, history, english, biology] = subjects;
-
-  const lists = await Promise.all(
-    ["My Tasks", "Homework", "Errands"].map((name) =>
-      db.taskList.create({ data: { name, userId: user.id } }),
-    ),
-  );
-  const [myTasks, homework, errands] = lists;
-
-  // Tasks — includes the overdue row behind the dashboard overdue banner
-  // ("Return library books") and a today/+1 spread for the KPI cards.
-  const taskDefs = [
-    { title: "Return library books", listId: errands.id, dueDate: at(-2, 17), priority: "medium" },
-    { title: "Finish calculus problem set", listId: homework.id, subjectId: math.id, dueDate: at(0, 20), priority: "high", myDay: true },
-    { title: "Read chapter 4 — vectors", listId: homework.id, subjectId: math.id, dueDate: at(0, 22), priority: "high", important: true, myDay: true },
-    { title: "Outline history essay", listId: homework.id, subjectId: history.id, dueDate: at(1, 18), priority: "low" },
-    { title: "Weekly vocabulary review", listId: homework.id, subjectId: english.id, repeat: "weekly" },
-    { title: "Annotate Keats ode", listId: homework.id, subjectId: english.id, dueDate: at(2, 18), priority: "low" },
-    { title: "Lab report: pendulum experiment", listId: homework.id, subjectId: physics.id, dueDate: at(3, 17), priority: "medium" },
-    { title: "Lab report draft", listId: homework.id, subjectId: physics.id, dueDate: at(3, 17), priority: "medium" },
-    { title: "Practice French vocabulary", listId: myTasks.id, repeat: "daily", myDay: true },
-    { title: "Book dentist appointment", listId: errands.id },
-    { title: "Set up study group chat", listId: myTasks.id, completed: true },
-    { title: "Submit scholarship form", listId: myTasks.id, completed: true, dueDate: at(-1, 12) },
-  ];
-  for (const t of taskDefs) {
-    await db.task.create({ data: { ...t, userId: user.id } });
-  }
-
-  const assignmentDefs = [
-    { title: "Problem set 7 — integrals", subjectId: math.id, type: "homework", progress: 80, priority: "high", dueDate: at(2, 17) },
-    { title: "Problem set 6", subjectId: math.id, type: "worksheet", progress: 40, priority: "high", dueDate: at(5, 17) },
-    { title: "Kinetics lab write-up", subjectId: chemistry.id, type: "lab", progress: 45, priority: "urgent", dueDate: at(4, 17) },
-    { title: "Romeo & Juliet analysis", subjectId: english.id, type: "essay", progress: 25, priority: "medium", dueDate: at(6, 17) },
-    { title: "Cold War timeline", subjectId: history.id, type: "project", progress: 60, priority: "medium", dueDate: at(8, 17) },
-    { title: "Physics reading — ch. 12", subjectId: physics.id, type: "reading", progress: 0, priority: "low", dueDate: at(1, 17) },
-  ];
-  for (const a of assignmentDefs) {
-    await db.assignment.create({ data: { ...a, userId: user.id } });
-  }
-
-  const examDefs = [
-    { title: "Calculus II Midterm", subjectId: math.id, date: at(1, 9), type: "midterm", duration: 90, topics: JSON.stringify(["Integration by parts", "Series"]) },
-    { title: "Quiz — Integration", subjectId: math.id, date: at(4, 9), type: "quiz", duration: 45, topics: JSON.stringify(["u-substitution"]) },
-    { title: "Chemistry Quiz 5", subjectId: chemistry.id, date: at(3, 10), type: "quiz", duration: 30, topics: JSON.stringify(["Equilibrium"]) },
-    // S76/AC5: one seeded location so the 📍 card row renders on a
-    // populated account (the FIRST card keeps no location — the S8 pin's
-    // no-map-pin assertion stays valid for it).
-    { title: "Physics Final", subjectId: physics.id, date: at(12, 9), type: "final", duration: 120, topics: JSON.stringify(["Mechanics", "Thermo"]), location: "Examination Hall A" },
-  ];
-  for (const e of examDefs) {
-    await db.exam.create({ data: { ...e, userId: user.id } });
-  }
-
-  const eventDefs = [
-    { title: "Study group — calculus", startDate: at(0, 16), endDate: at(0, 17, 30), location: "Library room 2B", repeat: "weekly", reminders: "[15,60]" },
-    { title: "Advisor meeting", startDate: at(2, 13), endDate: at(2, 13, 30), location: "Room 210" },
-    { title: "Chemistry lab session", startDate: at(4, 14), endDate: at(4, 16), location: "Science hall", repeat: "weekly" },
-  ];
-  for (const ev of eventDefs) {
-    await db.event.create({ data: { ...ev, userId: user.id } });
-  }
-
-  const classDefs = [
-    { name: "Calculus II", dayOfWeek: 0, startTime: "9:00", endTime: "10:30", subjectId: math.id, room: "M201" },
-    { name: "Physics", dayOfWeek: 1, startTime: "11:00", endTime: "12:30", subjectId: physics.id, room: "P105", weekType: "A" },
-    { name: "World History", dayOfWeek: 2, startTime: "9:00", endTime: "10:30", subjectId: history.id, room: "H14" },
-    { name: "English Literature", dayOfWeek: 3, startTime: "13:00", endTime: "14:30", subjectId: english.id, room: "E3" },
-    { name: "Chemistry Lab", dayOfWeek: 4, startTime: "14:00", endTime: "16:00", subjectId: chemistry.id, room: "Sci 2", weekType: "B" },
-  ];
-  for (const c of classDefs) {
-    await db.timetableClass.create({ data: { ...c, userId: user.id } });
-  }
-
-  const notebooks = await Promise.all(
-    ["Lecture Notes", "Reading Journal"].map((name) =>
-      db.notebook.create({ data: { name, userId: user.id } }),
-    ),
-  );
-  const noteDefs = [
-    { title: "Dot product intuition", content: "The dot product measures alignment: positive when vectors point the same way, zero when perpendicular.", notebookId: notebooks[0].id, subjectId: math.id, tags: '["calculus"]' },
-    { title: "Integration techniques", content: "# Integration\n\n- substitution\n- by parts: ∫u dv = uv − ∫v du\n- partial fractions for rational functions", notebookId: notebooks[0].id, subjectId: math.id, tags: '["calculus","exam-prep"]' },
-    { title: "Kinetics summary", content: "Rate laws: zero/first/second order.\nArrhenius: k = A·e^(−Ea/RT).", notebookId: notebooks[0].id, subjectId: chemistry.id },
-    { title: "Essay sources", content: "Primary: letters collection.\nSecondary: two journal articles (2009, 2015).", notebookId: notebooks[1].id, subjectId: history.id, tags: '["research"]' },
-  ];
-  for (const n of noteDefs) {
-    await db.note.create({ data: { ...n, userId: user.id } });
-  }
-
-  const decks = await Promise.all(
-    [
-      { name: "Integration rules", description: "Derivatives and antiderivatives", color: "#8b5cf6", subjectId: math.id },
-      { name: "Biology Chapter 5", description: "Cell energy and enzymes", color: "#10b981", subjectId: biology.id },
-      { name: "Spanish Vocabulary", description: "Unit 4 — travel", color: "#3b82f6", subjectId: null },
-    ].map((d) => db.flashcardDeck.create({ data: { ...d, userId: user.id } })),
-  );
-  const cardDefs = [
-    { deckId: decks[0].id, front: "Chain rule", back: "Differentiate the outer function and multiply by the inner derivative — e.g. d/dx sin(x^2) = 2x cos(x)", difficulty: "medium" },
-    { deckId: decks[0].id, front: "What does ATP stand for?", back: "Adenosine triphosphate", difficulty: "easy" },
-    { deckId: decks[0].id, front: "Enzyme function definition", back: "A biological catalyst that lowers activation energy", difficulty: "medium" },
-    { deckId: decks[0].id, front: "Krebs cycle location", back: "Mitochondrial matrix", difficulty: "hard" },
-    { deckId: decks[1].id, front: "the airport", back: "el aeropuerto", difficulty: "easy" },
-    { deckId: decks[1].id, front: "to travel", back: "viajar", difficulty: "medium" },
-  ];
-  for (const c of cardDefs) {
-    await db.flashcard.create({ data: c });
-  }
-
-  await db.practiceTest.create({
-    data: {
-      userId: user.id,
-      title: "Vectors practice set",
-      durationMinutes: 30,
-      questions: JSON.stringify([
-        { question: "What is the dot product of two orthogonal vectors?", type: "short_answer" },
-        { question: "The magnitude of a vector is always positive.", type: "true_false" },
-      ]),
-      subjectId: math.id,
-    },
+  // Idempotent: a re-seed wipes the transactional + master rows, keeps the user.
+  await db.saleItem.deleteMany({ where: { sale: { userId } } });
+  await db.sale.deleteMany({ where: { userId } });
+  await db.shift.deleteMany({ where: { userId } });
+  await db.product.deleteMany({ where: { userId } });
+  await db.category.deleteMany({ where: { userId } });
+  await db.cashRegister.deleteMany({ where: { userId } });
+  await db.cashier.deleteMany({ where: { userId } });
+  await db.storeSettings.upsert({
+    where: { userId },
+    update: {},
+    create: { userId },
   });
 
-  await db.practiceTest.create({
-    data: {
-      userId: user.id,
-      title: "Biology Review",
-      durationMinutes: 45,
-      questions: JSON.stringify([
-        { question: "What is DNA?", type: "short_answer" },
-        { question: "Mitochondria are the powerhouse of the cell.", type: "true_false" },
-        { question: "Which organelle synthesizes proteins?", type: "multiple_choice" },
-      ]),
-      subjectId: biology.id,
-    },
-  });
-
-  await db.studyGroup.create({
-    data: {
-      userId: user.id,
-      name: "Calc Crew",
-      subjectId: math.id,
-      members: JSON.stringify([
-        { name: "Ari", email: "ari@example.com" },
-        { name: "Sam", email: "sam@example.com" },
-      ]),
-    },
-  });
-
-  const gradeDefs = [
-    { title: "Problem set 6", score: 92, maxScore: 100, weight: 1, subjectId: math.id },
-    { title: "Quiz 4", score: 85, maxScore: 100, weight: 0.5, subjectId: math.id },
-    { title: "Kinetics quiz", score: 78, maxScore: 100, weight: 1, subjectId: chemistry.id },
-    { title: "Midterm essay", score: 88, maxScore: 100, weight: 2, subjectId: english.id },
-    { title: "Lab practical", score: 95, maxScore: 100, weight: 1, subjectId: physics.id },
-  ];
-  for (const g of gradeDefs) {
-    await db.grade.create({ data: { ...g, userId: user.id } });
+  const categories = new Map<string, string>();
+  for (const name of CATEGORIES) {
+    const row = await db.category.create({ data: { userId, name } });
+    categories.set(name, row.id);
   }
 
-  // Focus sessions across the last 7 days (the Analytics charts' data).
-  const focusDefs = [
-    { dayOffset: 0, durationSeconds: 1500 },
-    { dayOffset: 1, durationSeconds: 3000 },
-    { dayOffset: 2, durationSeconds: 4500 },
-    { dayOffset: 3, durationSeconds: 1500 },
-    { dayOffset: 4, durationSeconds: 6000 },
-    { dayOffset: 5, durationSeconds: 3000 },
-    { dayOffset: 6, durationSeconds: 4500 },
-  ];
-  for (const f of focusDefs) {
-    await db.focusSession.create({
+  const products = new Map<string, { id: string; priceCents: number }>();
+  for (const p of PRODUCTS) {
+    const row = await db.product.create({
       data: {
-        userId: user.id,
-        startedAt: at(-f.dayOffset, 15),
-        durationSeconds: f.durationSeconds,
-        mode: "focus",
-        completed: true,
+        userId,
+        categoryId: categories.get(p.category) ?? null,
+        name: p.name,
+        barcode: p.barcode,
+        priceCents: Math.round(p.price * 100),
+        stock: p.stock,
+        minStock: p.minStock ?? 5,
+        taxRate: TAX_RATE,
+      },
+    });
+    products.set(p.name, { id: row.id, priceCents: row.priceCents });
+  }
+
+  const caja1 = await db.cashRegister.create({
+    data: { userId, name: "Caja 1", location: "Entrada principal" },
+  });
+  await db.cashRegister.create({
+    data: { userId, name: "Caja 2", location: "Área de abarrotes" },
+  });
+
+  const cesar = await db.cashier.create({
+    data: { userId, name: "Cesar Martínez", email: "cesar@veloxpos.mx" },
+  });
+
+  const saleSpecs: {
+    ticket: string;
+    daysAgo: number;
+    hour: number;
+    minute: number;
+    lines: { name: string; qty: number }[];
+  }[] = [
+    { ticket: "V-MO6BJT7G", daysAgo: 6, hour: 22, minute: 9, lines: [{ name: "Coca-Cola 600ml", qty: 1 }] },
+    { ticket: "V-MMPNY55Z", daysAgo: 4, hour: 1, minute: 45, lines: [] },
+  ];
+
+  // The reference's two completed sales (V-MO6BJT7G 1× Coca-Cola = $21.46
+  // total, and V-MMPNY55Z totalling $61.48). Ticket 1's lines are fully
+  // observable; ticket 2's exact composition is not (its $61.48 cannot be
+  // composed from the visible catalog) — we ship a documented equivalent:
+  // Sabritas + Coca-Cola + Pan Bimbo = subtotal $86.00 → total $99.76, with
+  // the deviation recorded in docs/veloxpos-implementation-plan.md.
+  saleSpecs[1].lines = [
+    { name: "Sabritas Original 45g", qty: 1 },
+    { name: "Coca-Cola 600ml", qty: 1 },
+    { name: "Pan Bimbo Blanco", qty: 1 },
+  ];
+
+  for (const spec of saleSpecs) {
+    const openedAt = new Date();
+    openedAt.setDate(openedAt.getDate() - spec.daysAgo);
+    openedAt.setHours(9, 0, 0, 0);
+    const closedAt = new Date(openedAt);
+    closedAt.setDate(closedAt.getDate() + 2);
+    closedAt.setHours(spec.hour, spec.minute, 0, 0);
+
+    const subtotal = spec.lines.reduce(
+      (sum, line) => sum + (products.get(line.name)?.priceCents ?? 0) * line.qty,
+      0,
+    );
+    const tax = taxOf(subtotal);
+
+    const shift = await db.shift.create({
+      data: {
+        userId,
+        registerId: caja1.id,
+        cashierId: cesar.id,
+        openedAt,
+        closedAt,
+        openingFloatCents: 20000,
+        closingAmountCents: 20000 + subtotal + tax,
+        expectedAmountCents: 20000 + subtotal + tax,
+        differenceCents: 0,
+        status: "closed",
+      },
+    });
+
+    await db.sale.create({
+      data: {
+        userId,
+        ticketNumber: spec.ticket,
+        cashierId: cesar.id,
+        registerId: caja1.id,
+        shiftId: shift.id,
+        paymentMethod: "cash",
+        subtotalCents: subtotal,
+        taxCents: tax,
+        totalCents: subtotal + tax,
+        status: "completed",
+        createdAt: closedAt,
+        updatedAt: closedAt,
+        items: {
+          create: spec.lines
+            .filter((line) => line.qty > 0)
+            .map((line) => {
+              const product = products.get(line.name);
+              return {
+                productId: product?.id ?? null,
+                name: line.name,
+                unitPriceCents: product?.priceCents ?? 0,
+                quantity: line.qty,
+                taxRate: TAX_RATE,
+                lineTotalCents: (product?.priceCents ?? 0) * line.qty,
+              };
+            }),
+        },
       },
     });
   }
 
-  await db.holiday.createMany({
-    data: [
-      { userId: user.id, name: "Fall break", date: at(21, 0) },
-      { userId: user.id, name: "Thanksgiving", date: at(38, 0) },
-    ],
-  });
-
-  console.log("Seed: demo account ready — demo@studyflow.app / Demo1234!");
-  await db.$disconnect();
+  console.log("Seeded VeloxPOS:");
+  console.log(`  login: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+  console.log(`  categories: ${categories.size}, products: ${products.size}`);
+  console.log("  registers: 2, cashiers: 1, shifts: 2, sales: 2");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  })
+  .finally(() => db.$disconnect());
