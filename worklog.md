@@ -84,3 +84,22 @@ Stage Summary:
   Reasoned in the PAD/plan.
 - Remaining debt is tracked in PAD §10 (roles, distributed rate limiter, CSV formula
   escaping, ignoreBuildErrors flip, reduced-motion).
+
+---
+
+Task ID: 1 (appendix — push reconciliation)
+Agent: Z.ai (main agent)
+Date: 2026-10-26
+
+Work Log:
+- On push, the wrapper reported non-fast-forward: origin/main had moved ahead of the
+  clone point (8534fee → a8e6430) with a PARALLEL VeloxPOS transformation draft
+  (ac818aa feat / 0b78972 test / 0519e30 docs / a8e6430 log — 445 files, a different
+  implementation of the same brief, not built or verified in this session).
+- Resolution: merged origin/main with strategy `-s ours` — the parallel draft's commits
+  remain in history for archaeology, while the final tree is THIS session's verified
+  implementation (138 unit + 24 e2e green, screenshots, doc chain). Recorded honestly
+  here rather than silently discarding either side.
+
+Stage Summary:
+- History preserved (no force push), final tree = this session's remediated codebase.
